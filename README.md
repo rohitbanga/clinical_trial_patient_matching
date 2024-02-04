@@ -137,6 +137,6 @@ python scripts/gen_metrics.py PATH_TO_RESULTS_CSV
 To generate figures, run the following script.
 
 ```bash
-python figures/make_tables.py
-python figures/make_clinician_rationale_figure.py
+python scripts/make_figures.py
+python scripts/make_clinician_rationale_figure.py
 ```
