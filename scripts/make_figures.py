@@ -219,7 +219,7 @@ if __name__ == '__main__':
     # LLM Models
     df_llms: Dict[str, pd.DataFrame] = {
         'baseline' : pd.read_csv(os.path.join(BASE_DIR, 'baseline/baseline_preds.csv')),
-        'gpt35' : pd.read_csv(os.path.join(BASE_DIR, 'prompt-strat/gpt3.5-each_criteria_all_notes/shc-gpt-35-turbo-16k|sentence-transformers_all-MiniLM-L6-v2|9999|each_criteria_all_notes|test|criteria-all_preds.csv')),
+        'gpt35' : pd.read_csv(os.path.join(BASE_DIR, 'prompt-strat/gpt3.5-all_criteria_each_notes/shc-gpt-35-turbo-16k|sentence-transformers_all-MiniLM-L6-v2|9999|each_criteria_all_notes|test|criteria-all_preds.csv')),
         'gpt4' : pd.read_csv(os.path.join(BASE_DIR, 'prompt-strat/gpt4-all_criteria_each_notes/GPT4-32k|sentence-transformers_all-MiniLM-L6-v2|9999|all_criteria_each_notes|test|criteria-all_preds.csv')),
         'mixtral' : pd.read_csv(os.path.join(BASE_DIR, 'llm_models/mixtral-32k/mistralai_Mixtral-8x7B-Instruct-v0.1|sentence-transformers_all-MiniLM-L6-v2|9999|all_criteria_each_notes|test|criteria-all_preds.csv')),
         'llama2' : pd.read_csv(os.path.join(BASE_DIR, 'llm_models/llama2-70b/NousResearch_Yarn-Llama-2-70b-32k|sentence-transformers_all-MiniLM-L6-v2|9999|all_criteria_each_notes|test|criteria-all_preds.csv')),
