@@ -45,6 +45,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--criterion', type=str, default=None, help='If specfied, then only evaluate that one criterion')
     parser.add_argument('--patient_range', type=str, default=None, help='Format as: `start,end`. If specified, only include patients with those idxs in dataset, inclusive -- e.g. 0,99 will get patients with idxs 0 to 99 inclusive (so 100 total)')
     parser.add_argument('--is_use_orig_defs', action="store_true", default=False, help='If specfied, then use original n2c2 criteria definitions')
+    parser.add_argument('--is_exclude_rationale', action="store_true", default=False, help='If specfied, then DO NOT include rationale in JSON output of LLM')
     args = parser.parse_args()
     return args
 
@@ -59,6 +60,7 @@ if __name__ == '__main__':
     strategy: str = args.strategy
     criterion: Optional[str] = args.criterion
     is_use_orig_defs: bool = args.is_use_orig_defs
+    is_exclude_rationale: bool = args.is_exclude_rationale
     tensor_parallel_size: int = args.tensor_parallel_size
     patient_range: Optional[str] = args.patient_range
     date_time = pd.Timestamp.now().strftime("%Y-%m-%d-%H-%M-%S")
@@ -105,9 +107,9 @@ if __name__ == '__main__':
         if llm_model in ['GPT4-32k', 'shc-gpt-35-turbo-16k']:
             # Azure SHC
             llm_kwargs['openai_client'] = openai.AzureOpenAI(
-                base_url=f"https://shcopenaisandbox.openai.azure.com/openai/deployments/{llm_model}/chat/completions?api-version=2023-07-01-preview",
+                base_url=f"https://shcopenaisandbox.openai.azure.com/openai/deployments/{llm_model}/chat/completions?api-version=2024-02-15-preview",
                 api_key=os.environ.get("OPENAI_API_KEY"),
-                api_version="2023-07-01-preview",
+                api_version="2024-02-15-preview",
             )
             llm_kwargs['is_use_json'] = False
         else:
@@ -145,7 +147,8 @@ if __name__ == '__main__':
                               llm_kwargs, 
                               is_all_criteria='all_criteria' in strategy, 
                               is_all_notes='all_notes' in strategy,
-                              is_chunk_keep_full_note=is_chunk_keep_full_note)
+                              is_chunk_keep_full_note=is_chunk_keep_full_note,
+                              is_exclude_rationale=is_exclude_rationale)
 
 
     df_results = pd.DataFrame(results)

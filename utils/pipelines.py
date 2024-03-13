@@ -34,7 +34,7 @@ def generate_result(patient: Dict[str, Any], note: str, note_idx: Union[int, Lis
         'prompt_tokens' : stat.prompt_tokens if stat is not None else None,
     }
     
-def prompt__one_criteria(patient: Dict[str, Any], note: str, criterion: str, definition: str) -> str:
+def prompt__one_criteria(patient: Dict[str, Any], note: str, criterion: str, definition: str, is_exclude_rationale: bool = False) -> str:
     """Given a clinical note, specific criterion, and that criterion's definition, constructs a prompt for the LLM."""
     prompt: str = f"""
 
@@ -64,7 +64,7 @@ Given the criterion above, use the patient's clinical note to determine whether 
 Format your response as a JSON object with the following keys: 
 * criterion: str - The name of the criterion being assessed
 * medications_and_supplements: List[str] - The names of all current medications and supplements that the patient is taking
-* rationale: str - Your reasoning as to why the patient does or does not meet the criterion
+{'* rationale: str - Your reasoning as to why the patient does or does not meet that criterion' if not is_exclude_rationale else ''}
 * is_met: bool - "true" if the patient meets that criterion, or it can be inferred that they meet that criterion with common sense. "false" if the patient does not or it is impossible to assess this given the provided information.
 * confidence: str - Either "low", "medium", or "high" to reflect your confidence in your response
 
@@ -73,7 +73,7 @@ An example of how your JSON response should be formatted is shown below:
 {{
     "criterion" : "{criterion}",
     "medications_and_supplements" : [ "medication_1", "medication_2"],
-    "rationale" : "something something",
+    {'"rationale" : "something something",' if not is_exclude_rationale else ''}
     "is_met" : true/false,
     "confidence" : "low/medium/high",
 }}
@@ -95,17 +95,19 @@ def pipeline(dataloader: XMLDataLoader,
             llm_kwargs: Dict,
             is_all_criteria: bool = False,
             is_all_notes: bool = False,
-            is_chunk_keep_full_note: bool = False) -> Tuple[List[Dict[str, Any]], List[UsageStat]]:
+            is_chunk_keep_full_note: bool = False,
+            is_exclude_rationale: bool = False) -> Tuple[List[Dict[str, Any]], List[UsageStat]]:
     """For each criterion, look at `each / all notes at once` and query the LLM to asses if match or not."""
     results: List[Dict[str, Any]] = []
     stats: List[UsageStat] = []
     queries: List[namedtuple] = []
 
     # Count tokens in prompt for truncation
-    if is_all_criteria:
-        n_tokens_in_prompt: int = len(llm_kwargs['tokenizer'].encode(prompt__all_criteria(patients[0], '', dataloader.definitions)))
-    else:
-        n_tokens_in_prompt: int = len(llm_kwargs['tokenizer'].encode(prompt__one_criteria(patients[0], '', dataloader.criteria[0], dataloader.definitions[dataloader.criteria[0]])))
+    if 'tokenizer' in llm_kwargs:
+        if is_all_criteria:
+            n_tokens_in_prompt: int = len(llm_kwargs['tokenizer'].encode(prompt__all_criteria(patients[0], '', dataloader.definitions, is_exclude_rationale=is_exclude_rationale)))
+        else:
+            n_tokens_in_prompt: int = len(llm_kwargs['tokenizer'].encode(prompt__one_criteria(patients[0], '', dataloader.criteria[0], dataloader.definitions[dataloader.criteria[0]], is_exclude_rationale=is_exclude_rationale)))
 
     criteria: List[str] = [ 'all' ] if is_all_criteria else dataloader.criteria
     for patient in patients:
@@ -139,12 +141,12 @@ def pipeline(dataloader: XMLDataLoader,
 
             for doc, note_idx in zip(docs, note_idxs):
                 if is_all_criteria:
-                    if model_2_tokens[llm_model] < 32_000:
+                    if 'tokenizer' in llm_kwargs and model_2_tokens[llm_model] < 32_000:
                         doc = truncate_doc(llm_kwargs['tokenizer'], doc, max_tokens=model_2_tokens[llm_model] - n_tokens_in_prompt - 64) # buffer of 50 tokens
-                    prompt: str = prompt__all_criteria(patient, doc, dataloader.definitions)
+                    prompt: str = prompt__all_criteria(patient, doc, dataloader.definitions, is_exclude_rationale=is_exclude_rationale)
                     queries.append(Query(patient=patient, note=doc, note_idx=note_idx, criterion=None, definition=None, prompt=prompt))
                 else:
-                    prompt: str = prompt__one_criteria(patient, doc, criterion, dataloader.definitions[criterion])
+                    prompt: str = prompt__one_criteria(patient, doc, criterion, dataloader.definitions[criterion], is_exclude_rationale=is_exclude_rationale)
                     queries.append(Query(patient=patient, note=doc, note_idx=note_idx, criterion=criterion, definition=dataloader.definitions[criterion], prompt=prompt))
 
     # Sanity checks
@@ -195,7 +197,7 @@ def pipeline(dataloader: XMLDataLoader,
     return results, stats
 
 
-def prompt__all_criteria(patient: Dict[str, Any], note: str, criteria_2_definition: Dict[str, str]) -> str:
+def prompt__all_criteria(patient: Dict[str, Any], note: str, criteria_2_definition: Dict[str, str], is_exclude_rationale: bool = False) -> str:
     """Given a clinical note and all criteria, constructs a prompt for the LLM."""
     section_criteria: str = "\n".join([ f"- {criterion}: {definition}" for criterion, definition in criteria_2_definition.items() ])
     prompt: str = f"""
@@ -227,7 +229,7 @@ For each of the criteria above, use the patient's clinical note to determine whe
 Format your response as a JSON list of dictionaries, where each dictionary contains the following elements:
 * criterion: str - The name of the criterion being assessed
 * medications_and_supplements: List[str] - The names of all current medications and supplements that the patient is taking
-* rationale: str - Your reasoning as to why the patient does or does not meet that criterion
+{'* rationale: str - Your reasoning as to why the patient does or does not meet that criterion' if not is_exclude_rationale else ''}
 * is_met: bool - "true" if the patient meets that criterion, or it can be inferred that they meet that criterion with common sense. "false" if the patient does not or it is impossible to assess this given the provided information.
 * confidence: str - Either "low", "medium", or "high" to reflect your confidence in your response
 
@@ -238,14 +240,14 @@ An example of how your JSON response should be formatted is shown below, where t
         {{
             "criteria_1" : "something",
             "medications_and_supplements" : [ "medication_1", "medication_2"],
-            "rationale" : "something something",
+            {'"rationale" : "something something",' if not is_exclude_rationale else ''}
             "is_met" : true/false,
             "confidence" : "low/medium/high",
         }},
         {{
             "criteria_2" : "something",
             "medications_and_supplements" : [],
-            "rationale" : "something something",
+            {'"rationale" : "something something",' if not is_exclude_rationale else ''}
             "is_met" : true/false,
             "confidence" : "low/medium/high",
         }},
