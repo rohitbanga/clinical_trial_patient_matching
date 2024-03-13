@@ -3,13 +3,8 @@ openai==1.6.1
 ipykernel==6.17.1
 tqdm
 python-dotenv
-torch
-# git+https://github.com/viktor-ferenczi/outlines.git
-# pydantic==2.0.0
 chromadb==0.4.21
-accelerate==0.25.0
 datasets==2.16.0
-bitsandbytes==0.41.3
 requests
 matplotlib
 seaborn
@@ -18,5 +13,13 @@ dirtyjson
 scikit-learn
 tiktoken
 git+https://github.com/lapp0/outlines.git@fix-vllm-group-generation
-vllm==0.2.7
 openpyxl
+#
+# Local models only:
+#
+# torch
+# accelerate==0.25.0
+# bitsandbytes==0.41.3
+# git+https://github.com/viktor-ferenczi/outlines.git
+# pydantic==2.0.0
+# vllm==0.2.7
