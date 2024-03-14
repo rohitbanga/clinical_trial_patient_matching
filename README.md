@@ -6,6 +6,7 @@ How to install the repo:
 conda create -n pmct python=3.10 -y
 conda activate pmct
 pip install -r requirements.txt
+pip install -e .
 ```
 
 # Generate Embeddings
@@ -114,6 +115,20 @@ python scripts/eval.py --llm_model 'mistralai/Mixtral-8x7B-Instruct-v0.1' --stra
 python scripts/eval.py --llm_model 'NousResearch/Yarn-Llama-2-70b-32k' --strategy 'all_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999 --tensor_parallel_size 4
 # TBD
 python scripts/eval.py --llm_model 'Qwen/Qwen-72B-Chat' --strategy 'each_criteria_all_notes' --is_chunk_keep_full_note --n_chunks 9999 --tensor_parallel_size 4
+```
+
+## Ablation of `Rationale` key in prompt
+
+```bash
+python scripts/eval.py --is_exclude_rationale --llm_model 'GPT4-32k' --strategy 'all_criteria_all_notes' --is_chunk_keep_full_note --n_chunks 9999
+python scripts/eval.py --is_exclude_rationale --llm_model 'GPT4-32k' --strategy 'all_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999
+python scripts/eval.py --is_exclude_rationale --llm_model 'GPT4-32k' --strategy 'each_criteria_all_notes' --is_chunk_keep_full_note --n_chunks 9999
+python scripts/eval.py --is_exclude_rationale --llm_model 'GPT4-32k' --strategy 'each_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999
+
+python scripts/eval.py --is_exclude_rationale --llm_model 'shc-gpt-35-turbo-16k' --strategy 'all_criteria_all_notes' --is_chunk_keep_full_note --n_chunks 9999
+python scripts/eval.py --is_exclude_rationale --llm_model 'shc-gpt-35-turbo-16k' --strategy 'all_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999
+python scripts/eval.py --is_exclude_rationale --llm_model 'shc-gpt-35-turbo-16k' --strategy 'each_criteria_all_notes' --is_chunk_keep_full_note --n_chunks 9999
+python scripts/eval.py --is_exclude_rationale --llm_model 'shc-gpt-35-turbo-16k' --strategy 'each_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999
 ```
 
 ## Troubleshooting

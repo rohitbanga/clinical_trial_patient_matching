@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel, BaseConfig, constr
 from enum import Enum
 from collections import namedtuple
@@ -11,7 +11,7 @@ class ConfidenceLevel(str, Enum):
 class CriterionAssessment(BaseModel):
     criterion: str
     medications_and_supplements: List[str]
-    rationale: str
+    rationale: Optional[str] = ""
     is_met: bool
     confidence: ConfidenceLevel
 
@@ -24,7 +24,7 @@ UsageStat = namedtuple('UsageStat', ['completion_tokens', 'prompt_tokens'])
 class BaseHFModel(BaseModel):
     criterion: str
     medications_and_supplements: List[str]
-    rationale: str
+    rationale: Optional[str]
     is_met: bool
     confidence: ConfidenceLevel
 

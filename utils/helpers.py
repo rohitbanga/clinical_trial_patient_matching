@@ -8,6 +8,7 @@ import traceback
 import chromadb
 import httpx
 from matplotlib import pyplot as plt
+import concurrent.futures
 import openai
 import pandas as pd
 from tqdm import tqdm
@@ -233,6 +234,14 @@ def _batch_query_openai_worker(args):
         print("Rate limit exceeded -- waiting 30 seconds before retrying")
         time.sleep(30)
         return _batch_query_openai_worker(args)
+    except openai.APIConnectionError:
+        print("API connection error -- waiting 30 seconds before retrying")
+        time.sleep(30)
+        return _batch_query_openai_worker(args)
+    except httpx.RemoteProtocolError:
+        print("HTTP Protocol error -- waiting 30 seconds before retrying")
+        time.sleep(30)
+        return _batch_query_openai_worker(args)
     except Exception as e:
         traceback.print_exc()
         print(f"Unknown error: {e}")
@@ -240,8 +249,11 @@ def _batch_query_openai_worker(args):
 
 def batch_query_openai(prompts: List[str], llm_model: str, output_type: str, n_procs: int = 10, is_frequency_penalty: bool = False) -> List[Tuple[Union[CriterionAssessment, CriterionAssessments], UsageStat]]:
     tasks = [ (idx, prompt, llm_model, output_type, is_frequency_penalty) for idx, prompt in enumerate(prompts) ]
-    with Pool(processes=n_procs) as pool:
-        results: List[Tuple[Union[CriterionAssessment, CriterionAssessments], UsageStat]] = list(tqdm(pool.imap(_batch_query_openai_worker, tasks), desc='Running batch_query_openai()...', total=len(tasks)))
+    results = []
+    for task in tqdm(tasks, desc='Running batch_query_openai()...'):
+        results.append(_batch_query_openai_worker(task))
+    # with concurrent.futures.ThreadPoolExecutor(max_workers=n_procs) as pool:
+    #     results: List[Tuple[Union[CriterionAssessment, CriterionAssessments], UsageStat]] = list(tqdm(pool.map(_batch_query_openai_worker, tasks), desc='Running batch_query_openai()...', total=len(tasks)))
     return results
 
 def batch_query_hf(prompts: Union[List[str], str], llm_model: str, output_type: str, llm_kwargs: Dict[str, Any], n_retries: int = 0) -> List[Tuple[Union[CriterionAssessment, CriterionAssessments], UsageStat]]:
@@ -338,7 +350,7 @@ def query_openai(prompt: str, llm_model: str, output_type: str, llm_kwargs: Dict
                 {"role": "user", "content": prompt},
             ],
             response_format={"type": "json_object"},
-            max_tokens=min(max(1, model_max_tokens-max_tokens), 3000),
+            max_tokens=10_000, #min(max(1, model_max_tokens-max_tokens), 3000),
             model=llm_model,
             temperature=0 if n_retries < 1 else 0.1,
         )
@@ -353,7 +365,7 @@ def query_openai(prompt: str, llm_model: str, output_type: str, llm_kwargs: Dict
                     },
                     {"role": "user", "content": prompt},
                 ],
-                max_tokens=min(max(1, model_max_tokens-max_tokens), 4096) if not is_frequency_penalty else 10_000,
+                max_tokens=10_000, #min(max(1, model_max_tokens-max_tokens), 4096) if not is_frequency_penalty else 10_000,
                 model=llm_model,
                 temperature=0 if n_retries < 1 else 0.1,
                 frequency_penalty=0 if not is_frequency_penalty else (0 if n_retries < 1 else 0.1),
