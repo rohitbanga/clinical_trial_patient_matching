@@ -42,6 +42,7 @@ model_2_tokens = {
     'mistralai/Mixtral-8x7B-v0.1' : 32_000,
     'togethercomputer/Llama-2-7B-32K-Instruct' : 32_000,
     'NousResearch/Yarn-Llama-2-70b-32k' : 32_000,
+    'gpt-3.5-turbo-0125' : 4_000,
 }
 
 def compare_criterion_lists(list1, list2):
@@ -248,12 +249,11 @@ def _batch_query_openai_worker(args):
         sys.exit(1)
 
 def batch_query_openai(prompts: List[str], llm_model: str, output_type: str, n_procs: int = 10, is_frequency_penalty: bool = False) -> List[Tuple[Union[CriterionAssessment, CriterionAssessments], UsageStat]]:
-    tasks = [ (idx, prompt, llm_model, output_type, is_frequency_penalty) for idx, prompt in enumerate(prompts) ]
+    
+    tasks   = [ (idx, prompt, llm_model, output_type, is_frequency_penalty) for idx, prompt in enumerate(prompts) ]
     results = []
     for task in tqdm(tasks, desc='Running batch_query_openai()...'):
         results.append(_batch_query_openai_worker(task))
-    # with concurrent.futures.ThreadPoolExecutor(max_workers=n_procs) as pool:
-    #     results: List[Tuple[Union[CriterionAssessment, CriterionAssessments], UsageStat]] = list(tqdm(pool.map(_batch_query_openai_worker, tasks), desc='Running batch_query_openai()...', total=len(tasks)))
     return results
 
 def batch_query_hf(prompts: Union[List[str], str], llm_model: str, output_type: str, llm_kwargs: Dict[str, Any], n_retries: int = 0) -> List[Tuple[Union[CriterionAssessment, CriterionAssessments], UsageStat]]:
@@ -332,13 +332,15 @@ def batch_query_hf(prompts: Union[List[str], str], llm_model: str, output_type: 
 
 def query_openai(prompt: str, llm_model: str, output_type: str, llm_kwargs: Dict[str, Any], idx: int, n_retries: int = 0, is_frequency_penalty: bool = False) -> Tuple[Union[CriterionAssessment, CriterionAssessments], UsageStat]:
     """Queries OpenAI model with the given prompt and returns the JSON response."""
-    client = llm_kwargs['openai_client']
+    client            = llm_kwargs['openai_client']
     is_use_json: bool = llm_kwargs['is_use_json']
 
     # Calculate max tokens
-    encoding = tiktoken.get_encoding('cl100k_base')
+    encoding              = tiktoken.get_encoding('cl100k_base')
     model_max_tokens: int = model_2_tokens[llm_model]
-    max_tokens: int = len(encoding.encode(prompt))
+    max_tokens: int       = len(encoding.encode(prompt))
+    max_tokens: int = 4000
+    
 
     if is_use_json:
         response = client.chat.completions.create(
@@ -350,7 +352,7 @@ def query_openai(prompt: str, llm_model: str, output_type: str, llm_kwargs: Dict
                 {"role": "user", "content": prompt},
             ],
             response_format={"type": "json_object"},
-            max_tokens=10_000, #min(max(1, model_max_tokens-max_tokens), 3000),
+            max_tokens=max_tokens,#10_000, #min(max(1, model_max_tokens-max_tokens), 3000),
             model=llm_model,
             temperature=0 if n_retries < 1 else 0.1,
         )
@@ -365,7 +367,7 @@ def query_openai(prompt: str, llm_model: str, output_type: str, llm_kwargs: Dict
                     },
                     {"role": "user", "content": prompt},
                 ],
-                max_tokens=10_000, #min(max(1, model_max_tokens-max_tokens), 4096) if not is_frequency_penalty else 10_000,
+                max_tokens=max_tokens,#1000 #min(max(1, model_max_tokens-max_tokens), 4096) if not is_frequency_penalty else 10_000,
                 model=llm_model,
                 temperature=0 if n_retries < 1 else 0.1,
                 frequency_penalty=0 if not is_frequency_penalty else (0 if n_retries < 1 else 0.1),

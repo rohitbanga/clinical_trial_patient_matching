@@ -21,17 +21,51 @@ def generate_result(patient: Dict[str, Any], note: str, note_idx: Union[int, Lis
     medications_and_supplements: List[str] = assessment.medications_and_supplements
     return {
         'patient_id' : patient['patient_id'],
-        'note' : note,
-        'note_idx' : note_idx,
-        'criterion' : criterion,
-        'prompt' : prompt,
+        'note' :       note,
+        'note_idx' :   note_idx,
+        'criterion' :  criterion,
+        'prompt' :     prompt,
         'rationale' : rationale,
         'medications_and_supplements' : medications_and_supplements,
         'is_met' : 1 if is_met else 0,
         'confidence' : str(confidence),
         'true_label' : patient['labels'][criterion],
         'completion_tokens' : stat.completion_tokens if stat is not None else None,
-        'prompt_tokens' : stat.prompt_tokens if stat is not None else None,
+        'prompt_tokens' :     stat.prompt_tokens     if stat is not None else None,
+    }
+
+
+
+def generate_result_koopman(query, assessment: CriterionAssessment, stat: UsageStat) -> Dict[str, Any]:
+    """Helper method that constructs a result dictionary from a patient, note, prompt, and assessment."""
+    
+   
+    patient  = query["patient"]
+    trail    = query["trail"]
+    trail_id = query["trail_id"]
+    label    = query["label"]
+    prompt   = query["prompt"]
+     
+     
+    criterion:  str = assessment.criterion
+    rationale:  str = assessment.rationale
+    is_met:     str = assessment.is_met
+    confidence: str = assessment.confidence
+    medications_and_supplements: List[str] = assessment.medications_and_supplements
+     
+    return {
+        'patient_id' : patient['patient_id'],
+        'trail_id':   trail_id,
+        'note' :       patient["ehr"],
+        'criterion' :  criterion,
+        'prompt' :     prompt,
+        'rationale' : rationale,
+        'medications_and_supplements' : medications_and_supplements,
+        'is_met' : 1 if is_met else 0,
+        'confidence' : str(confidence),
+        'true_label' : label,
+        'completion_tokens' : stat.completion_tokens if stat is not None else None,
+        'prompt_tokens' :     stat.prompt_tokens     if stat is not None else None,
     }
     
 def prompt__one_criteria(patient: Dict[str, Any], note: str, criterion: str, definition: str, is_exclude_rationale: bool = False) -> str:
@@ -197,6 +231,67 @@ def pipeline(dataloader: XMLDataLoader,
     return results, stats
 
 
+
+def pipeline_koopman(dataset, 
+            patient: List[Dict[str, Any]],
+            llm_model: str,
+            llm_kwargs: Dict,
+            is_exclude_rationale: bool = False) -> Tuple[List[Dict[str, Any]], List[UsageStat]]:
+    
+    """For each criterion, look at `each / all notes at once` and query the LLM to asses if match or not."""
+    results: List[Dict[str, Any]] = []
+    stats:   List[UsageStat] = []
+    queries: List[namedtuple] = []
+    
+    
+    for label in tqdm(patient["labels"]):
+        trail       =  dataset["trails"][label["trail"]]
+        
+        prompt,n_criterias = prompt__all_criteria_koopman(patient,trail,is_exclude_rationale=is_exclude_rationale)
+        queries.append({"patient":patient,
+                        "trail":trail,
+                        "trail_id":label["trail"],
+                        "prompt":prompt,
+                        "label":label["label"],
+                        "total_criterion":n_criterias})
+    
+    # for debugging
+    #queries = [queries[0]]
+    #import pdb;pdb.set_trace()
+
+    # Query LLM whether it satisfies the criteria
+    if 'openai_client' in llm_kwargs:
+        responses: List[Tuple] = batch_query_openai([ x["prompt"] for x in queries ], llm_model, 'CriterionAssessments')
+        
+    else:
+        responses: List[Tuple] = batch_query_hf([ x["prompt"] for x in queries ], llm_model, 'CriterionAssessments')
+        
+    #assert len(responses) == len(queries), f"Expected {len(queries)} responses, but got {len(responses)} instead."
+    
+    # response is type 'CriterionAssessments'
+    
+    
+    # Process each response
+    for (response, stat), query in zip(responses, queries):
+        is_response_null: bool = response is None
+        
+        if is_response_null:
+            response = null_assessments(assessments=[null_assessment(criterion =f"criterion_{criterion}", 
+                                                                     rationale =None, 
+                                                                     is_met     =None, 
+                                                                     confidence =None, 
+                                                                     medications_and_supplements=[]) for criterion in range(0,queryn_criterias["total_criterion"])])
+            
+        assessments: List[CriterionAssessment] = response.assessments 
+        stats.append(stat)
+     
+        for assessment_idx, assessment in enumerate(assessments):
+            results.append(generate_result_koopman(query, assessment, stat))
+        
+       
+    return results, stats
+
+
 def prompt__all_criteria(patient: Dict[str, Any], note: str, criteria_2_definition: Dict[str, str], is_exclude_rationale: bool = False) -> str:
     """Given a clinical note and all criteria, constructs a prompt for the LLM."""
     section_criteria: str = "\n".join([ f"- {criterion}: {definition}" for criterion, definition in criteria_2_definition.items() ])
@@ -260,3 +355,74 @@ The above example is only for illustration purposes only. It does not reflect th
 Please analyze the given patient and inclusion criteria. Remember to include all inclusion criteria in your returned JSON dictionary. Please provide your JSON response:
 """
     return prompt
+
+
+
+def prompt__all_criteria_koopman(patient: Dict[str, Any], trail: Dict[str, Any],  is_exclude_rationale: bool = False) -> str:
+    """Given a clinical note and all criteria, constructs a prompt for the LLM."""
+    
+    inclusion_criteria: str = "\n".join([ f"- inclusion_criteria_{i}: {criteria}" for i,criteria in enumerate(trail["inclusion_criteria"]) ])
+    exclusion_criteria: str = "\n".join([ f"- exclusion_criteria_{i}: {criteria}" for i,criteria in enumerate(trail["exclusion_criteria"]) ])
+    
+    prompt: str = f"""
+# Task
+Your job is to indicate which of the following inclusion and exlusion  criteria is met by the patient
+
+# Patient
+
+Below is a clinical note describing the patient's current health status:
+
+```
+{patient["ehr"]}
+```
+
+# Inclusion Criteria
+
+The inclusion criteria being assessed are listed below, followed by their definitions: 
+{inclusion_criteria}
+
+
+The exclusion criteria being assessed are listed below, followed by their definitions: 
+{exclusion_criteria}
+
+# Assessment
+
+For each of the criteria above (both inclusion and exclusion), use the patient's clinical note to determine whether the patient meets each criteria. Think step by step, and justify your answer.
+
+Format your response as a JSON list of dictionaries, where each dictionary contains the following elements:
+* criterion: str - The name of the criterion being assessed
+* medications_and_supplements: List[str] - The names of all current medications and supplements that the patient is taking
+{'* rationale: str - Your reasoning as to why the patient does or does not meet that criterion' if not is_exclude_rationale else ''}
+* is_met: bool - "true" if the patient meets that criterion, or it can be inferred that they meet that criterion with common sense. "false" if the patient does not or it is impossible to assess this given the provided information.
+* confidence: str - Either "low", "medium", or "high" to reflect your confidence in your response
+
+An example of how your JSON response should be formatted is shown below, where the list of JSON dictionaries is stored in the "assessments" key:
+```json
+{{ 
+    "assessments" : [
+        {{
+            "criteria_1" : "something",
+            "medications_and_supplements" : [ "medication_1", "medication_2"],
+            {'"rationale" : "something something",' if not is_exclude_rationale else ''}
+            "is_met" : true/false,
+            "confidence" : "low/medium/high",
+        }},
+        {{
+            "criteria_2" : "something",
+            "medications_and_supplements" : [],
+            {'"rationale" : "something something",' if not is_exclude_rationale else ''}
+            "is_met" : true/false,
+            "confidence" : "low/medium/high",
+        }},
+        ...
+    ]
+}}
+```
+The above example is only for illustration purposes only. It does not reflect the actual criteria or patient for this task.
+
+Please analyze the given patient and  inclusion and exclusion criteria. Remember to include all  inclusion and exclusion criteria in your returned JSON dictionary. Please provide your JSON response:
+"""
+    return prompt, len(inclusion_criteria) + len(exclusion_criteria)
+
+
+
