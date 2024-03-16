@@ -36,16 +36,16 @@ def generate_result(patient: Dict[str, Any], note: str, note_idx: Union[int, Lis
 
 
 
-def generate_result_koopman(query, assessment: CriterionAssessment, stat: UsageStat) -> Dict[str, Any]:
+def generate_result_koopman(query:dict, 
+                            assessment: CriterionAssessment, 
+                            stat: UsageStat,
+                            global_response = None) -> Dict[str, Any]:
     """Helper method that constructs a result dictionary from a patient, note, prompt, and assessment."""
-    
-   
     patient  = query["patient"]
     trail    = query["trail"]
     trail_id = query["trail_id"]
     label    = query["label"]
     prompt   = query["prompt"]
-     
      
     criterion:  str = assessment.criterion
     rationale:  str = assessment.rationale
@@ -53,7 +53,7 @@ def generate_result_koopman(query, assessment: CriterionAssessment, stat: UsageS
     confidence: str = assessment.confidence
     medications_and_supplements: List[str] = assessment.medications_and_supplements
      
-    return {
+    response_dict = {
         'patient_id' : patient['patient_id'],
         'trail_id':   trail_id,
         'note' :       patient["ehr"],
@@ -67,6 +67,11 @@ def generate_result_koopman(query, assessment: CriterionAssessment, stat: UsageS
         'completion_tokens' : stat.completion_tokens if stat is not None else None,
         'prompt_tokens' :     stat.prompt_tokens     if stat is not None else None,
     }
+    
+    if global_response!= None:
+        response_dict["global_response"] = global_response
+        
+    return response_dict
     
 def prompt__one_criteria(patient: Dict[str, Any], note: str, criterion: str, definition: str, is_exclude_rationale: bool = False) -> str:
     """Given a clinical note, specific criterion, and that criterion's definition, constructs a prompt for the LLM."""
@@ -236,18 +241,23 @@ def pipeline_koopman(dataset,
             patient: List[Dict[str, Any]],
             llm_model: str,
             llm_kwargs: Dict,
-            is_exclude_rationale: bool = False) -> Tuple[List[Dict[str, Any]], List[UsageStat]]:
+            is_exclude_rationale: bool = False,
+            add_gloabl_decision:bool   = True,) -> Tuple[List[Dict[str, Any]], List[UsageStat]]:
     
     """For each criterion, look at `each / all notes at once` and query the LLM to asses if match or not."""
     results: List[Dict[str, Any]] = []
     stats:   List[UsageStat] = []
     queries: List[namedtuple] = []
+
     
     
     for label in tqdm(patient["labels"]):
         trail       =  dataset["trails"][label["trail"]]
         
-        prompt,n_criterias = prompt__all_criteria_koopman(patient,trail,is_exclude_rationale=is_exclude_rationale)
+        prompt,n_criterias = prompt__all_criteria_koopman(patient,
+                                                          trail,
+                                                          is_exclude_rationale=is_exclude_rationale, 
+                                                          add_gloabl_decision = add_gloabl_decision)
         queries.append({"patient":patient,
                         "trail":trail,
                         "trail_id":label["trail"],
@@ -261,18 +271,15 @@ def pipeline_koopman(dataset,
 
     # Query LLM whether it satisfies the criteria
     if 'openai_client' in llm_kwargs:
-        responses: List[Tuple] = batch_query_openai([ x["prompt"] for x in queries ], llm_model, 'CriterionAssessments')
+        responses: List[Tuple] = batch_query_openai([ x["prompt"] for x in queries ], llm_model, 'CriterionAssessments',add_gloabl_decision=add_gloabl_decision)
         
     else:
         responses: List[Tuple] = batch_query_hf([ x["prompt"] for x in queries ], llm_model, 'CriterionAssessments')
         
-    #assert len(responses) == len(queries), f"Expected {len(queries)} responses, but got {len(responses)} instead."
-    
-    # response is type 'CriterionAssessments'
-    
+
     
     # Process each response
-    for (response, stat), query in zip(responses, queries):
+    for (response, stat,gloabl_response), query in zip(responses, queries):
         is_response_null: bool = response is None
         
         if is_response_null:
@@ -281,12 +288,14 @@ def pipeline_koopman(dataset,
                                                                      is_met     =None, 
                                                                      confidence =None, 
                                                                      medications_and_supplements=[]) for criterion in range(0,queryn_criterias["total_criterion"])])
+            gloabl_response = 3
             
+    
         assessments: List[CriterionAssessment] = response.assessments 
         stats.append(stat)
      
         for assessment_idx, assessment in enumerate(assessments):
-            results.append(generate_result_koopman(query, assessment, stat))
+            results.append(generate_result_koopman(query, assessment, stat,gloabl_response))
         
        
     return results, stats
@@ -360,7 +369,7 @@ Please analyze the given patient and inclusion criteria. Remember to include all
 
 def prompt__all_criteria_koopman(patient: Dict[str, Any], 
                                  trail:   Dict[str, Any],
-                                 add_gloabl_decision:bool = True,
+                                 add_gloabl_decision:bool   = False,
                                  is_exclude_rationale: bool = False) -> str:
     """Given a clinical note and all criteria, constructs a prompt for the LLM."""
     

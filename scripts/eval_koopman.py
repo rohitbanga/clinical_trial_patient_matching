@@ -104,22 +104,32 @@ if __name__ == '__main__':
     results: List[Dict[str, Any]] = []
     stats:        List[UsageStat] = []
     patient_2_criteria_2_docs: Dict[str, Dict[str, List]] = {}
+    counter_pa = 0
     
     for patient_idx, patient in enumerate(tqdm(dataset["patients"], desc='Looping through patients...')):
-       
+        counter_pa+=1
 
         # Query LLM for all patients
-        results, stats = pipeline_koopman(dataset,
+        results_i, stats_i = pipeline_koopman(dataset,
                                           patient,
                                           llm_model, 
                                           llm_kwargs, 
-                                          is_exclude_rationale=is_exclude_rationale)
-        #break 
-
-    #import pdb;pdb.set_trace()
-    df_results = pd.DataFrame(results)
-    df_results.to_csv(f"{file_name}.csv")
-    print(f"Result Saved at {file_name}")
+                                          is_exclude_rationale=is_exclude_rationale,
+                                          add_gloabl_decision= True)
+        
+        results.extend(results_i)
+        stats.extend(stats_i)
+        
+        #if counter_pa == 2:
+        #    break
+      
+    
+    try:
+        df_results = pd.DataFrame(results)
+        df_results.to_csv(f"{file_name}.csv")
+        print(f"Result Saved at {file_name}")
+    except: 
+        import pdb;pdb.set_trace()
 
     # Calculate overall token usage
     completion_tokens: int = sum([ stat.completion_tokens for stat in stats ])
