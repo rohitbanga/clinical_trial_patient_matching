@@ -358,7 +358,10 @@ Please analyze the given patient and inclusion criteria. Remember to include all
 
 
 
-def prompt__all_criteria_koopman(patient: Dict[str, Any], trail: Dict[str, Any],  is_exclude_rationale: bool = False) -> str:
+def prompt__all_criteria_koopman(patient: Dict[str, Any], 
+                                 trail:   Dict[str, Any],
+                                 add_gloabl_decision:bool = True,
+                                 is_exclude_rationale: bool = False) -> str:
     """Given a clinical note and all criteria, constructs a prompt for the LLM."""
     
     inclusion_criteria: str = "\n".join([ f"- inclusion_criteria_{i}: {criteria}" for i,criteria in enumerate(trail["inclusion_criteria"]) ])
@@ -396,6 +399,10 @@ Format your response as a JSON list of dictionaries, where each dictionary conta
 * is_met: bool - "true" if the patient meets that criterion, or it can be inferred that they meet that criterion with common sense. "false" if the patient does not or it is impossible to assess this given the provided information.
 * confidence: str - Either "low", "medium", or "high" to reflect your confidence in your response
 
+
+{'# Global decision' if add_gloabl_decision else ''}
+{'*global_decision:int -either 0 for a patient that is not compatible with trial. 1 for a patient that might be compatible.  2 for a  patient that is compatible with the  trial' if add_gloabl_decision else ''}
+
 An example of how your JSON response should be formatted is shown below, where the list of JSON dictionaries is stored in the "assessments" key:
 ```json
 {{ 
@@ -415,12 +422,13 @@ An example of how your JSON response should be formatted is shown below, where t
             "confidence" : "low/medium/high",
         }},
         ...
-    ]
+    ]{',' if  add_gloabl_decision else ''}
+    {'"global_decision":0/1/2,' if add_gloabl_decision else ''}
 }}
 ```
 The above example is only for illustration purposes only. It does not reflect the actual criteria or patient for this task.
 
-Please analyze the given patient and  inclusion and exclusion criteria. Remember to include all  inclusion and exclusion criteria in your returned JSON dictionary. Please provide your JSON response:
+Please analyze the given patient and  inclusion and exclusion criteria {'as well as global decision' if add_gloabl_decision else ''}. Remember to include all  inclusion and exclusion criteria in your returned JSON dictionary. Please provide your JSON response:
 """
     return prompt, len(inclusion_criteria) + len(exclusion_criteria)
 
