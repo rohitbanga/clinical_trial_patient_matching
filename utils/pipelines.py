@@ -6,7 +6,8 @@ from tqdm import tqdm
 from utils.data_loader import XMLDataLoader
 from utils.helpers import batch_query_openai, batch_query_hf, model_2_tokens
 from utils.types import CriterionAssessment, UsageStat
-from typing import Dict, List, Any, Set, Tuple, Union
+from typing import Dict, List, Any, Optional, Set, Tuple, Union
+from utils.few_shot_examples import one_criteria_one_shot, all_criteria_one_shot, one_criteria_two_shot, all_criteria_two_shot
 
 def truncate_doc(tokenizer, doc: str, max_tokens: int) -> str:
     """Truncate the document to a maximum number of tokens."""
@@ -34,12 +35,22 @@ def generate_result(patient: Dict[str, Any], note: str, note_idx: Union[int, Lis
         'prompt_tokens' : stat.prompt_tokens if stat is not None else None,
     }
     
-def prompt__one_criteria(patient: Dict[str, Any], note: str, criterion: str, definition: str, is_exclude_rationale: bool = False) -> str:
+def prompt__one_criteria(patient: Dict[str, Any], note: str, criterion: str, definition: str, is_exclude_rationale: bool = False, n_few_shot_examples: Optional[int] = None) -> str:
     """Given a clinical note, specific criterion, and that criterion's definition, constructs a prompt for the LLM."""
+    
+    # Few-shot
+    section__few_shot_examples = ''
+    if n_few_shot_examples == 1:
+        section__few_shot_examples = one_criteria_one_shot(is_exclude_rationale)
+    elif n_few_shot_examples == 2:
+        section__few_shot_examples = one_criteria_two_shot(is_exclude_rationale)
+
     prompt: str = f"""
 
 # Task
 Your job is to decide whether the given patient meets the inclusion criterion.
+
+{section__few_shot_examples}
 
 # Patient
 
@@ -78,6 +89,7 @@ An example of how your JSON response should be formatted is shown below:
     "confidence" : "low/medium/high",
 }}
 ```
+
 The above example is only for illustration purposes only. It does not reflect the actual criterion or patient for this task.
 
 Please provide your response:
@@ -96,7 +108,8 @@ def pipeline(dataloader: XMLDataLoader,
             is_all_criteria: bool = False,
             is_all_notes: bool = False,
             is_chunk_keep_full_note: bool = False,
-            is_exclude_rationale: bool = False) -> Tuple[List[Dict[str, Any]], List[UsageStat]]:
+            is_exclude_rationale: bool = False,
+            n_few_shot_examples: Optional[int] = None) -> Tuple[List[Dict[str, Any]], List[UsageStat]]:
     """For each criterion, look at `each / all notes at once` and query the LLM to asses if match or not."""
     results: List[Dict[str, Any]] = []
     stats: List[UsageStat] = []
@@ -105,9 +118,9 @@ def pipeline(dataloader: XMLDataLoader,
     # Count tokens in prompt for truncation
     if 'tokenizer' in llm_kwargs:
         if is_all_criteria:
-            n_tokens_in_prompt: int = len(llm_kwargs['tokenizer'].encode(prompt__all_criteria(patients[0], '', dataloader.definitions, is_exclude_rationale=is_exclude_rationale)))
+            n_tokens_in_prompt: int = len(llm_kwargs['tokenizer'].encode(prompt__all_criteria(patients[0], '', dataloader.definitions, is_exclude_rationale=is_exclude_rationale, n_few_shot_examples=n_few_shot_examples)))
         else:
-            n_tokens_in_prompt: int = len(llm_kwargs['tokenizer'].encode(prompt__one_criteria(patients[0], '', dataloader.criteria[0], dataloader.definitions[dataloader.criteria[0]], is_exclude_rationale=is_exclude_rationale)))
+            n_tokens_in_prompt: int = len(llm_kwargs['tokenizer'].encode(prompt__one_criteria(patients[0], '', dataloader.criteria[0], dataloader.definitions[dataloader.criteria[0]], is_exclude_rationale=is_exclude_rationale, n_few_shot_example=n_few_shot_examples)))
 
     criteria: List[str] = [ 'all' ] if is_all_criteria else dataloader.criteria
     for patient in patients:
@@ -143,10 +156,10 @@ def pipeline(dataloader: XMLDataLoader,
                 if is_all_criteria:
                     if 'tokenizer' in llm_kwargs and model_2_tokens[llm_model] < 32_000:
                         doc = truncate_doc(llm_kwargs['tokenizer'], doc, max_tokens=model_2_tokens[llm_model] - n_tokens_in_prompt - 64) # buffer of 50 tokens
-                    prompt: str = prompt__all_criteria(patient, doc, dataloader.definitions, is_exclude_rationale=is_exclude_rationale)
+                    prompt: str = prompt__all_criteria(patient, doc, dataloader.definitions, is_exclude_rationale=is_exclude_rationale, n_few_shot_examples=n_few_shot_examples)
                     queries.append(Query(patient=patient, note=doc, note_idx=note_idx, criterion=None, definition=None, prompt=prompt))
                 else:
-                    prompt: str = prompt__one_criteria(patient, doc, criterion, dataloader.definitions[criterion], is_exclude_rationale=is_exclude_rationale)
+                    prompt: str = prompt__one_criteria(patient, doc, criterion, dataloader.definitions[criterion], is_exclude_rationale=is_exclude_rationale, n_few_shot_examples=n_few_shot_examples)
                     queries.append(Query(patient=patient, note=doc, note_idx=note_idx, criterion=criterion, definition=dataloader.definitions[criterion], prompt=prompt))
 
     # Sanity checks
@@ -197,13 +210,23 @@ def pipeline(dataloader: XMLDataLoader,
     return results, stats
 
 
-def prompt__all_criteria(patient: Dict[str, Any], note: str, criteria_2_definition: Dict[str, str], is_exclude_rationale: bool = False) -> str:
+def prompt__all_criteria(patient: Dict[str, Any], note: str, criteria_2_definition: Dict[str, str], is_exclude_rationale: bool = False, n_few_shot_examples: Optional[int] = None) -> str:
     """Given a clinical note and all criteria, constructs a prompt for the LLM."""
     section_criteria: str = "\n".join([ f"- {criterion}: {definition}" for criterion, definition in criteria_2_definition.items() ])
+    
+    # Few-shot
+    section__few_shot_examples = ''
+    if n_few_shot_examples == 1:
+        section__few_shot_examples = all_criteria_one_shot(is_exclude_rationale)
+    elif n_few_shot_examples == 2:
+        section__few_shot_examples = all_criteria_two_shot(is_exclude_rationale)
+    
     prompt: str = f"""
 
 # Task
 Your job is to decide which of the following inclusion criteria the given patient meets.
+
+{section__few_shot_examples}
 
 # Patient
 
@@ -255,6 +278,7 @@ An example of how your JSON response should be formatted is shown below, where t
     ]
 }}
 ```
+
 The above example is only for illustration purposes only. It does not reflect the actual criteria or patient for this task.
 
 Please analyze the given patient and inclusion criteria. Remember to include all inclusion criteria in your returned JSON dictionary. Please provide your JSON response:

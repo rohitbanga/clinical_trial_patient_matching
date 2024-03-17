@@ -46,6 +46,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--patient_range', type=str, default=None, help='Format as: `start,end`. If specified, only include patients with those idxs in dataset, inclusive -- e.g. 0,99 will get patients with idxs 0 to 99 inclusive (so 100 total)')
     parser.add_argument('--is_use_orig_defs', action="store_true", default=False, help='If specfied, then use original n2c2 criteria definitions')
     parser.add_argument('--is_exclude_rationale', action="store_true", default=False, help='If specfied, then DO NOT include rationale in JSON output of LLM')
+    parser.add_argument('--n_few_shot_examples', type=int, default=None, help='If specfied (int), then provide that number of few shot examples')
     args = parser.parse_args()
     return args
 
@@ -61,6 +62,7 @@ if __name__ == '__main__':
     criterion: Optional[str] = args.criterion
     is_use_orig_defs: bool = args.is_use_orig_defs
     is_exclude_rationale: bool = args.is_exclude_rationale
+    n_few_shot_examples: Optional[int] = args.n_few_shot_examples
     tensor_parallel_size: int = args.tensor_parallel_size
     patient_range: Optional[str] = args.patient_range
     date_time = pd.Timestamp.now().strftime("%Y-%m-%d-%H-%M-%S")
@@ -69,6 +71,7 @@ if __name__ == '__main__':
 
     # sanity checks
     assert n_chunks is None or threshold is None, "Cannot specify both --n_chunks and --threshold"
+    assert n_few_shot_examples is None or n_few_shot_examples == 1 or n_few_shot_examples == 2, f"Currently only supports `1` or `2` or `None` few shot examples, not {n_few_shot_examples}"
 
     # Logging
     if os.path.exists(f"{file_name}.log"):
@@ -104,7 +107,7 @@ if __name__ == '__main__':
     llm_kwargs = {}
     if 'gpt-' in llm_model or 'GPT4' in llm_model:
         # OpenAI model
-        if llm_model in ['GPT4-32k', 'shc-gpt-35-turbo-16k']:
+        if llm_model in ['GPT4-32k', 'GPT4-32k-2', 'shc-gpt-35-turbo-16k']:
             # Azure SHC
             llm_kwargs['openai_client'] = openai.AzureOpenAI(
                 base_url=f"https://shcopenaisandbox.openai.azure.com/openai/deployments/{llm_model}/chat/completions?api-version=2024-02-15-preview",
@@ -148,7 +151,8 @@ if __name__ == '__main__':
                               is_all_criteria='all_criteria' in strategy, 
                               is_all_notes='all_notes' in strategy,
                               is_chunk_keep_full_note=is_chunk_keep_full_note,
-                              is_exclude_rationale=is_exclude_rationale)
+                              is_exclude_rationale=is_exclude_rationale,
+                              n_few_shot_examples=n_few_shot_examples)
 
 
     df_results = pd.DataFrame(results)
@@ -164,7 +168,7 @@ if __name__ == '__main__':
     if llm_model == 'gpt-4-1106-preview':
         cost_per_1k_completion_tokens = 0.01
         cost_per_1k_prompt_tokens = 0.03
-    elif llm_model == 'gpt-4-32k' or llm_model == 'GPT4-32k':
+    elif llm_model == 'gpt-4-32k' or llm_model == 'GPT4-32k' or llm_model == 'GPT4-32k-2':
         cost_per_1k_completion_tokens = 0.06
         cost_per_1k_prompt_tokens = 0.12
     elif llm_model == 'gpt-4':

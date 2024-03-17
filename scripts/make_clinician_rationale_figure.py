@@ -63,7 +63,7 @@ def plot_clustered_bar(ax, data, label):
     ax.set_xlabel('Count', fontsize=12)
     ax.set_xlim(0, 31)
     ax.tick_params(axis='x', labelsize=12)
-    ax.set_title(f'{"Model was Correct" if label else "Model was Incorrect"}', fontsize=12)
+    # ax.set_title(f'{"Model was Correct" if label else "Model was Incorrect"}', fontsize=12)
     if not label:
         # Only show legend for incorrect model b/c have space
         legend = ax.legend(title='Clinician Assessment', fontsize=12, title_fontsize=12, loc='upper right')

@@ -1,3 +1,4 @@
+import collections
 import os
 import re
 import pandas as pd
@@ -28,10 +29,12 @@ def convert_df_preds_to_xmls(df_preds, path_to_output_dir: str):
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Evaluate the model on the given data')
     parser.add_argument('path_to_csv', type=str, help='Path to eval.py output')
+    parser.add_argument('--exclude_confidences', type=str, default=None, help='Comma-separated list of criteria to exclude confidences for, e.g. "low,medium"')
+    parser.add_argument('--is_default_to_class_prevalence', action='store_true', default=False, help='If TRUE, replace any missing preds with most freq class in train set. If FALSE, replace with 0. If None, do nothing.')
     args = parser.parse_args()
     return args
 
-def gen_metrics(file_name: str, path_to_data: str):
+def gen_metrics(file_name: str, path_to_data: str, exclude_confidences: List[str] = [], is_default_to_class_prevalence: bool = False):
     # Load data
     dataloader = XMLDataLoader(path_to_data)
     dataset = dataloader.load_data()
@@ -43,7 +46,21 @@ def gen_metrics(file_name: str, path_to_data: str):
     # Force TRUE/FALSE to 1/0
     df_results['is_met'] = df_results['is_met'].apply(lambda x: 1 if x in [True, 'True',  1, '1'] else 0)
     df_results['true_label'] = df_results['true_label'].apply(lambda x: 1 if x in [True, 'True',  1, '1'] else 0)
+    df_orig = df_results.copy()
     
+    # Filter out excluded confidences (if any)
+    for confidence in exclude_confidences:
+        if confidence == 'low':
+            df_results = df_results[df_results['confidence'] != 'ConfidenceLevel.high']
+        elif confidence == 'medium':
+            df_results = df_results[df_results['confidence'] != 'ConfidenceLevel.medium']
+        elif confidence == 'high':
+            df_results = df_results[df_results['confidence'] != 'ConfidenceLevel.low']
+        else:
+            raise ValueError(f"Unexpected confidence level: {confidence}")
+    if len(exclude_confidences) > 0:
+        file_name += "__exclude_confidences-" + "_".join(exclude_confidences)
+
     # Logging
     if os.path.exists(f"{file_name}.log"):
         os.remove(f"{file_name}.log")
@@ -89,6 +106,29 @@ def gen_metrics(file_name: str, path_to_data: str):
         else:
             raise ValueError(f"Unexpected aggregation method: {dataloader.criteria_2_agg[criterion]}")
     df_preds = pd.concat(df_preds)
+    
+    # Replace any missing preds with most freq class in train set
+    if is_default_to_class_prevalence:
+        all_patient_ids: List[int] = df_orig['patient_id'].unique()
+        path_to_train_data: str = './data/train'
+        train_dataloader = XMLDataLoader(path_to_train_data)
+        train_dataset = train_dataloader.load_data()
+        all_criteria: List[str] = train_dataloader.criteria
+        criterion_2_counts: Dict[str, Dict] = { criterion: collections.defaultdict(int) for criterion in all_criteria }
+        for patient in train_dataset:
+            for criterion, is_met in patient['labels'].items():
+                criterion_2_counts[criterion][is_met] += 1
+        criterion_2_pred: Dict[str, int] = { criterion: 1 if criterion_2_counts[criterion][1] > criterion_2_counts[criterion][0] else 0 for criterion in train_dataloader.criteria }
+        df_default = pd.DataFrame([(a, b) for a in all_patient_ids for b in all_criteria], columns=['patient_id', 'criterion'])
+        df_default['is_met'] = df_default.apply(lambda x: criterion_2_pred[x.criterion], axis=1)
+        n_changed: int = 0
+        for idx, row in df_preds.iterrows():
+            n_changed += df_default.loc[(df_default['patient_id'] == row['patient_id']) & (df_default['criterion'] == row['criterion']), 'is_met'].values[0] != row['is_met']
+            df_default.loc[(df_default['patient_id'] == row['patient_id']) & (df_default['criterion'] == row['criterion']), 'is_met'] = row['is_met']
+        df_default['true_label'] = df_default.apply(lambda x: df_orig['true_label'][(df_orig['patient_id'] == x.patient_id) & (df_orig['criterion'] == x.criterion)].values[0], axis=1)
+        print(f"Differed from class prevalences for {n_changed} / {df_default.shape[0]} rows")
+        df_preds = df_default.copy()
+    
     df_preds.to_csv(f"{file_name}_preds.csv")
 
     with open(f"{file_name}.log", 'w') as f:
@@ -137,7 +177,9 @@ def gen_metrics(file_name: str, path_to_data: str):
 if __name__ == '__main__':
     args = parse_args()
     file_name: str = args.path_to_csv.replace(".csv", "")
+    exclude_confidences: List[str] = args.exclude_confidences.split(",") if args.exclude_confidences else []
+    is_default_to_class_prevalence: bool = args.is_default_to_class_prevalence
     split = 'train' if 'train' in file_name else 'test'
     path_to_data: str = './data/train/' if split == 'train' else './data/n2c2-t1_gold_standard_test_data/test/'
 
-    gen_metrics(file_name, path_to_data)
+    gen_metrics(file_name, path_to_data, exclude_confidences=exclude_confidences, is_default_to_class_prevalence=is_default_to_class_prevalence)
