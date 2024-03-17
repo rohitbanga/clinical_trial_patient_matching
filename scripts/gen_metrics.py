@@ -277,6 +277,7 @@ def gen_metrics_koopman(file_name: str, path_to_data: str):
     f1_scores['overall-macro-n2c2'] = macro
     df_f1 = pd.DataFrame.from_dict(f1_scores, orient='index', columns=['f1'])
     df_f1.to_csv(f"{file_name}_f1.csv")
+
 if __name__ == '__main__':
     args = parse_args()
     file_name: str = args.path_to_csv.replace(".csv", "")

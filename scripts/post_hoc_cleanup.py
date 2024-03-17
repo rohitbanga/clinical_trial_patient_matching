@@ -13,12 +13,14 @@ except ImportError as e:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Evaluate the model on the given data')
     parser.add_argument('path_to_csv', type=str, help='Path to CSV containing outputs of eval.py')
+    parser.add_argument('--is_exclude_rationale', action="store_true", help='If TRUE, then we ran the model without rationales, so use `completion_tokens` column for detecting NANs')
     args = parser.parse_args()
     return args
 
 if __name__ == '__main__':
     args = parse_args()
-    path_to_csv = args.path_to_csv
+    path_to_csv: str = args.path_to_csv
+    is_exclude_rationale: bool = args.is_exclude_rationale
     file_name: str = path_to_csv.split('/')[-1].replace('.csv', '')
     llm_model: str = file_name.split('|')[0]
     tensor_parallel_size: int = 4 # for local HF models
@@ -49,7 +51,8 @@ if __name__ == '__main__':
     else:
         raise ValueError('Could not determine strategy used')
 
-    df_na = df[df['rationale'].isna()]
+    nan_col: str = 'rationale' if not is_exclude_rationale else 'completion_tokens'
+    df_na = df[df[nan_col].isna()]
     print("start | # of NA rows:", len(df_na))
     
     # Query model to fill in NA rows
@@ -80,9 +83,9 @@ if __name__ == '__main__':
     df.to_csv(path_to_csv, index=False)
     
     print("start | # of NA rows:", len(df_na))
-    print("end | # of NA rows:", len(df[df['rationale'].isna()]))
+    print("end | # of NA rows:", len(df[df[nan_col].isna()]))
     
-    if len(df[df['rationale'].isna()]) == 0:
+    if len(df[df[nan_col].isna()]) == 0:
         # Calculate overall token usage
         if is_all_criteria:
             prompt_tokens: int = df.drop_duplicates(['patient_id', 'prompt'])['prompt_tokens'].sum()

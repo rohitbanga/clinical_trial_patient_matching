@@ -245,6 +245,35 @@ if __name__ == '__main__':
         }
     )
     
+    # Prompt Strategy
+    llms = [ 'gpt3.5', 'gpt4' ]
+    strats = ['all_criteria_each_notes', 'all_criteria_all_notes', 'each_criteria_all_notes', 'each_criteria_each_notes']
+    path_to_dir: str = os.path.join(BASE_DIR, 'prompt-strat/')
+    dfs_strat: Dict[str, pd.DataFrame] = {}
+    for llm in llms:
+        for strat in strats:
+            dir: str = os.path.join(path_to_dir, f'{llm}-{strat}')
+            path_to_csv: str = get_path_to_preds_csv(dir)
+            df_ = pd.read_csv(path_to_csv)
+            dfs_strat[f'{llm}-{strat}'] = df_
+    assert len(dfs_strat) == 8
+    df_strat = gen_metrics_df(dfs_strat)
+    df_strat = add_usage_stats_to_df(df_strat, path_to_dir)
+    df_strat['criteria'] = df_strat['df'].map(lambda x: 'All' if 'all_criteria' in x.split('-')[1] else 'Individual')
+    df_strat['notes'] = df_strat['df'].map(lambda x: 'All' if 'all_notes' in x.split('-')[1] else 'Individual')
+    save_df_to_latex(
+        df_strat[df_strat['criterion'] == 'overall'],
+        "prompt_strat",
+        "Simultaneously considering multiple notes/criteria hurts performance.",
+        index=['df', 'criteria', 'notes'],
+        other_cols_to_keep=['cost', 'tokens'],
+        model_2_name={
+            f'{llm}-{strat}' : f"{'GPT-3.5' if llm == 'gpt3.5' else 'GPT-4'} {strat}"
+            for llm in llms
+            for strat in strats
+        }
+    )
+    
     exit()
 
     # LLM Models
@@ -294,35 +323,6 @@ if __name__ == '__main__':
             'sota' : 'Prior SOTA',
             'baseline' : 'Class Prevalence',
         },
-    )
-    
-    # Prompt Strategy
-    llms = [ 'gpt3.5', 'gpt4' ]
-    strats = ['all_criteria_each_notes', 'all_criteria_all_notes', 'each_criteria_all_notes', 'each_criteria_each_notes']
-    path_to_dir: str = os.path.join(BASE_DIR, 'prompt-strat/')
-    dfs_strat: Dict[str, pd.DataFrame] = {}
-    for llm in llms:
-        for strat in strats:
-            dir: str = os.path.join(path_to_dir, f'{llm}-{strat}')
-            path_to_csv: str = get_path_to_preds_csv(dir)
-            df_ = pd.read_csv(path_to_csv)
-            dfs_strat[f'{llm}-{strat}'] = df_
-    assert len(dfs_strat) == 8
-    df_strat = gen_metrics_df(dfs_strat)
-    df_strat = add_usage_stats_to_df(df_strat, path_to_dir)
-    df_strat['criteria'] = df_strat['df'].map(lambda x: 'All' if 'all_criteria' in x.split('-')[1] else 'Individual')
-    df_strat['notes'] = df_strat['df'].map(lambda x: 'All' if 'all_notes' in x.split('-')[1] else 'Individual')
-    save_df_to_latex(
-        df_strat[df_strat['criterion'] == 'overall'],
-        "prompt_strat",
-        "Simultaneously considering multiple notes/criteria hurts performance.",
-        index=['df', 'criteria', 'notes'],
-        other_cols_to_keep=['cost', 'tokens'],
-        model_2_name={
-            f'{llm}-{strat}' : f"{'GPT-3.5' if llm == 'gpt3.5' else 'GPT-4'} {strat}"
-            for llm in llms
-            for strat in strats
-        }
     )
     
     # Chunks
