@@ -1,7 +1,11 @@
 import os
 import re
-from typing import Any, Dict, List, Tuple
+import pandas as pd
+from typing import Any, Dict, List, Tuple,Union
 import xml.etree.ElementTree as ET
+import xml.dom.minidom
+from tqdm import tqdm
+import json
 
 class XMLDataLoader:
     def __init__(self, 
@@ -170,3 +174,305 @@ class XMLDataLoader:
     def remove_excessive_newlines(self, text: str) -> str:
         text = text.replace('\n\n\n', '\n')
         return text
+    
+    
+
+
+class XMLDataLoaderKoopman:
+    def __init__(self, 
+                 path_to_folder: str, 
+                 is_convert_to_numbers=True,
+                 is_split_text=True,
+                 is_remove_excessive_new_lines=True):
+        self.path_to_folder                 = path_to_folder
+        self.is_convert_to_numbers          = is_convert_to_numbers
+        self.is_split_text                  = is_split_text
+        self.is_remove_excessive_new_lines  = is_remove_excessive_new_lines
+    
+    def get_trails(self,patient_id:int)-> List[Dict[int,str]]: 
+        trails: pd.DataFrame          = self.patient_trail_table[self.patient_trail_table["patient_id"] == patient_id]
+        labels: List[Dict[int:str]]   = trails[['trail', 'label']].to_dict('records')
+        
+        return labels
+    
+    def get_unique_tails(self) ->List[int] :
+        unique_trails:List[int] = list(dataset.patient_trail_table["trail"].unique())
+        return unique_trails
+    
+    
+    def load_data(self, verbose: bool = True, load_from_json:Union[None,str]= None) -> List[Dict[str, Any]]:
+        """ Main function: Data loader for the XML files"""
+        dataset = None
+        
+        if load_from_json:
+            try:
+                dataset = self.read_dataset_from_json(file_path=load_from_json)
+                
+            except Exception as e:
+                if verbose:
+                    print(f"Json file corrupted or does not exist, processing dataset from sratch.")
+                dataset = None
+
+        if dataset is None:
+            dataset = self.load_data_(verbose)
+           
+
+        return dataset
+
+    def load_data_(self,verbose:bool=True) -> List[Dict[str, Any]]:
+        """ Main function: Data loader for the XML files"""
+        
+        patient_EHR_path   = os.path.join(self.path_to_folder ,"topics-2014_2015-description.topics")
+        patient_trail_path = os.path.join(self.path_to_folder ,"qrels-clinical_trials.txt") 
+        trials_path        =  os.path.join(self.path_to_folder,"clinicaltrials.gov-16_dec_2015")   
+        
+        self.patient_trail_table = pd.read_csv(patient_trail_path, 
+                                               sep="\t" , 
+                                               names=["patient_id", "_", "trail", "label"])
+        
+        if verbose:
+            print("Loading Patients")
+        patient_dataset = self.load_patients(patient_EHR_path)
+        if verbose:
+            print("Loading Trails")
+        trail_dataset   = self.load_trails(trials_path)
+        
+        dataset = {"patients":patient_dataset,"trails":trail_dataset}
+        
+        self.save_dataset_as_json(dataset, "../data/koopman/patient_trail_dataset.json")
+        
+        return dataset
+    
+    def load_patients(self,patient_EHR_path:str) -> List[Dict[str, Any]]:
+        dataset      = []
+        with open(patient_EHR_path , "r") as file:
+            data = file.read()
+
+            num_pattern   = r'<NUM>(.*?)</NUM>'
+            title_pattern = r'<TITLE>(.*?)</TOP>'
+            num_matches   = re.findall(num_pattern, data, re.DOTALL)
+            title_matches = re.findall(title_pattern, data, re.DOTALL)
+
+            for num, title in zip(num_matches, title_matches):
+                dataset.append({
+                        "patient_id": num.strip(),
+                        "ehr":       title.strip(),
+                        "labels":  self.get_trails(int(num.strip()))})
+        return dataset
+    
+    
+    def load_trails(self,trials_path,return_dict:bool=True):
+        dataset = dict()
+        unique_trails   = self.patient_trail_table ["trail"].unique()
+        n_unique_trails = len(unique_trails)
+        
+        for trail_id in tqdm(unique_trails, desc="Loading Trails"):
+            #try:
+            if (trail_id == "NCT02006251") and (return_dict == False):
+                parsed_elgibility:str = self.return_NCT02006251()
+                
+            elif (trail_id == "NCT02006251") and (return_dict == True):
+                parsed_elgibility:str = self.return_NCT02006251_dict()
+                
+                
+
+            else:
+
+                trail_path:str                      = os.path.join(trials_path ,trail_id + ".xml")
+                root:xml.dom.minidom.Element        = self.get_root(trail_path)
+
+                if return_dict:
+                     parsed_elgibility_: dict  =  self.parse_child_data_as_dict(root)
+                     itemized_dict             = self.extract_criteria(parsed_elgibility_['criteria_text'])
+                     parsed_elgibility = {**parsed_elgibility_, **itemized_dict}
+
+                else:  
+                    elgibility:xml.dom.minidom.Element  = self.get_from_tag(root,tag="eligibility")
+                    parsed_elgibility:str               = self.parse_child_data(elgibility)
+                    
+
+
+            dataset[trail_id] = parsed_elgibility
+
+            #except:
+            #    print(f"Could not parse:{ trail_id}")
+        return dataset
+            
+        
+
+    def extract_criteria(self,text):
+        text = text.lower()
+        inclusion_criteria = re.findall(r'inclusion criteria:(.*?)(?=Exclusion Criteria:|$)', text, re.DOTALL)
+        exclusion_criteria = re.findall(r'exclusion criteria:(.*?)(?=$)', text, re.DOTALL)
+
+        if not inclusion_criteria:
+            inclusion_criteria = self.clean_ctiteria(text)
+        else:
+            inclusion_criteria =self.clean_ctiteria(inclusion_criteria[0])
+
+
+        if not exclusion_criteria:
+            exclusion_criteria  = "not defined"
+        else:
+            exclusion_criteria = self.clean_ctiteria(exclusion_criteria[0])
+
+        return {'inclusion_criteria': inclusion_criteria, 'exclusion_criteria': exclusion_criteria}
+    
+    @staticmethod
+    def clean_ctiteria(string:str):
+        items = [item.strip().replace("-","").lstrip()  for item in string.split('\n\n') if item.strip()]
+        return items
+    
+    def parse_child_data_as_dict(self,root):
+        
+        eligibility_data = {}
+        elgibility       = self.get_from_tag(root,tag="eligibility")
+        criteria         = self.get_from_tag(elgibility,tag="criteria")
+        
+        eligibility_data["criteria_text"]      = self.get_data(self.get_from_tag(criteria ,tag="textblock"))
+        eligibility_data['gender']             = self.get_data(self.get_from_tag(elgibility ,tag="gender"))
+        eligibility_data['minimum_age']        = self.get_data(self.get_from_tag(elgibility ,tag="minimum_age"))  
+        eligibility_data['maximum_age']        = self.get_data(self.get_from_tag(elgibility ,tag="maximum_age")) 
+        eligibility_data['healthy_volunteers'] = self.get_data(self.get_from_tag(elgibility ,tag="healthy_volunteers"))
+
+        return eligibility_data
+
+    @staticmethod
+    def get_root(trail_path:str) -> xml.dom.minidom.Element:
+        xml_doc = xml.dom.minidom.parse(trail_path)
+        root    = xml_doc.documentElement
+        return root
+
+    @staticmethod
+    def get_from_tag(root:xml.dom.minidom.Element,tag:str="eligibility") -> Union[xml.dom.minidom.Element,None]:
+        element_tag   = root.getElementsByTagName(tag).item(0)
+
+        if element_tag:
+            return element_tag
+        else: 
+            return None
+        
+    @staticmethod
+    def get_data(child):
+        if child: 
+            return  child.firstChild.data.strip()
+        else:
+            return "Not Specified"
+
+
+    @staticmethod       
+    def print_xml_data(element:xml.dom.minidom.Element, indent=0) -> None:
+        # Print the tag name
+        print("  " * indent + element.tagName)
+
+        # Print attributes
+        for attr_name, attr_value in element.attributes.items():
+            print("  " * (indent + 1) + f"@{attr_name}: {attr_value}")
+
+        # Print text content if any
+        if element.firstChild.nodeType == element.TEXT_NODE:
+            print("  " * (indent + 1) + "Text:", element.firstChild.data)
+
+        # Recursively print child elements
+        for child in element.childNodes:
+            if child.nodeType == element.ELEMENT_NODE:
+                print_xml_data(child, indent + 1)
+                
+    
+   
+
+
+    def parse_child_data(self,element:xml.dom.minidom.Element, indent=0) -> str:
+        result = ""
+
+        # Indentation for the current element
+        indentation = "  " * indent
+
+        # Start tag
+        #if add_tags:
+        result += f"{indentation}<{element.tagName}"
+
+        # Add attributes to the start tag
+        for attr_name, attr_value in element.attributes.items():
+            result += f' {attr_name}="{attr_value}"'
+
+        # Close start tag
+        #if add_tags:
+        result += ">"
+
+        # Add text content if any
+        if element.firstChild and element.firstChild.nodeType == element.TEXT_NODE:
+            result += element.firstChild.data.strip()
+
+        # Recursively parse child elements
+        for child in element.childNodes:
+            if child.nodeType == element.ELEMENT_NODE:
+                result += "\n" + self.parse_child_data(child, indent + 1)
+
+        # End tag
+        #if add_tags:
+        result += f"</{element.tagName}>"
+
+        return result
+    
+    def save_dataset_as_json(self, data, file_path):
+        # Ensure directory exists
+        directory = os.path.dirname(file_path)
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+        # Save dataset as JSON
+        with open(file_path, 'w') as json_file:
+            json.dump(data, json_file)
+            
+    def read_dataset_from_json(self,file_path:str="../data/koopman/patient_trail_dataset.json",verbose:bool=True):
+         
+        with open(file_path, 'r') as handler:
+            dataset  = json.load(handler)
+            
+        if verbose:
+            print("Dataset loaded from JSON successfully.")
+            
+        return dataset
+
+    
+    # ONE point in the dataset is not well formated, we could just correct the dataset, but this will require an extra step from the user.
+    # Thus I just harcoded
+    
+    @staticmethod
+    def return_NCT02006251_dict():
+        return  {'criteria_text': 'Men and women, ages 30 to 69. Documented myocardial infarction.',
+         'gender': 'Both',
+         'minimum_age': '18 Years',
+         'maximum_age': '85 Years',
+         'healthy_volunteers': 'No',
+         'inclusion_criteria': ['Primary, unilateral anterior or posterior total hip arthroplasty','18 to 85 years old at time of surgery','Able to get a pre- and post-operative CT scan at the Cleveland Clinic'],
+         'exclusion_criteria': ['Significant metal in the joint that results in metal artifact on the pre--operative CT scan, thereby compromising the ability to visualize the acetabulum on the pre-operative simulator.','Pregnancy','Incarceration',"Condition deemed by physician or medical staff to be non-conducive to patient's ability to complete the study, or a potential risk to the patient's health and well-being."]}
+            
+    @staticmethod
+    def return_NCT02006251():
+        return """<eligibility>
+  <criteria>
+    <textblock>Inclusion Criteria:
+
+     - Subjects to be included in this protocol will be adult males and females of all races and socioeconomic status meeting the following criteria:
+
+     - Primary, unilateral anterior or posterior total hip arthroplasty
+     
+     - 18 to 85 years old at time of surgery
+     
+     - Able to get a pre- and post-operative CT scan at the Cleveland Clinic
+     
+    Exclusion Criteria:
+
+    - Significant metal in the joint that results in metal artifact on the pre--operative CT scan, thereby compromising the ability to visualize the acetabulum on the pre-operative simulator.
+    
+    - Pregnancy
+    
+    - Incarceration
+    
+    - Condition deemed by physician or medical staff to be non-conducive to patient's ability to complete the study, or a potential risk to the patient's health and well-being.</textblock></criteria>
+  <gender>Both</gender>
+  <minimum_age>18 Years</minimum_age>
+  <maximum_age>85 Yearss</maximum_age>
+  <healthy_volunteers>No</healthy_volunteers></eligibility>"""

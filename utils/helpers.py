@@ -43,6 +43,7 @@ model_2_tokens = {
     'mistralai/Mixtral-8x7B-v0.1' : 32_000,
     'togethercomputer/Llama-2-7B-32K-Instruct' : 32_000,
     'NousResearch/Yarn-Llama-2-70b-32k' : 32_000,
+    'gpt-3.5-turbo-0125' : 4_000,
 }
 
 def compare_criterion_lists(list1, list2):
@@ -207,7 +208,7 @@ def prompt_to_qwen(message: str, system_prompt: str = SYSTEM_PROMPT) -> str:
     return f'<|im_start|>{message}<|im_end|>\n'
 
 def _batch_query_openai_worker(args):
-    idx, prompt, llm_model, output_type, is_frequency_penalty = args
+    idx, prompt, llm_model, output_type, is_frequency_penalty, is_add_global_decision = args
 
     # OpenAI model
     llm_kwargs = {}
@@ -225,7 +226,14 @@ def _batch_query_openai_worker(args):
     
     # Query LLM
     try:
-        q = query_openai(prompt, llm_model, output_type, llm_kwargs, idx, n_retries=0, is_frequency_penalty=is_frequency_penalty)
+        q = query_openai(prompt, 
+                         llm_model, 
+                         output_type, 
+                         llm_kwargs, 
+                         idx, 
+                         n_retries=2, 
+                         is_frequency_penalty=is_frequency_penalty,
+                         is_add_global_decision =is_add_global_decision)
         return q
     except openai.RateLimitError:
         print("Rate limit exceeded -- waiting 30 seconds before retrying")
@@ -248,11 +256,8 @@ def _batch_query_openai_worker(args):
         print(f"Unknown error: {e}")
         return None, None
 
-def batch_query_openai(prompts: List[str], llm_model: str, output_type: str, n_procs: int = 5, is_frequency_penalty: bool = False) -> List[Tuple[Union[CriterionAssessment, CriterionAssessments], UsageStat]]:
-    tasks = [ (idx, prompt, llm_model, output_type, is_frequency_penalty) for idx, prompt in enumerate(prompts) ]
-    results = []
-    # for task in tqdm(tasks, desc='Running batch_query_openai()...'):
-    #     results.append(_batch_query_openai_worker(task))
+def batch_query_openai(prompts: List[str], llm_model: str, output_type: str, n_procs: int = 5, is_frequency_penalty: bool = False, is_add_global_decision: bool = False) -> List[Tuple[Union[CriterionAssessment, CriterionAssessments], UsageStat]]:
+    tasks = [ (idx, prompt, llm_model, output_type, is_frequency_penalty, is_add_global_decision) for idx, prompt in enumerate(prompts) ]
     with concurrent.futures.ThreadPoolExecutor(max_workers=n_procs) as pool:
         results: List[Tuple[Union[CriterionAssessment, CriterionAssessments], UsageStat]] = list(tqdm(pool.map(_batch_query_openai_worker, tasks), desc='Running batch_query_openai()...', total=len(tasks)))
     return results
@@ -331,15 +336,24 @@ def batch_query_hf(prompts: Union[List[str], str], llm_model: str, output_type: 
     
     return all_results
 
-def query_openai(prompt: str, llm_model: str, output_type: str, llm_kwargs: Dict[str, Any], idx: int, n_retries: int = 0, is_frequency_penalty: bool = False) -> Tuple[Union[CriterionAssessment, CriterionAssessments], UsageStat]:
+def query_openai(prompt:      str, 
+                 llm_model:   str, 
+                 output_type: str, 
+                 llm_kwargs: Dict[str, Any], 
+                 idx:        int, 
+                 n_retries: int = 4, 
+                 is_frequency_penalty: bool = False,
+                 is_add_global_decision: bool = False ) -> Tuple[Union[CriterionAssessment, CriterionAssessments], UsageStat]:
     """Queries OpenAI model with the given prompt and returns the JSON response."""
-    client = llm_kwargs['openai_client']
+    client            = llm_kwargs['openai_client']
     is_use_json: bool = llm_kwargs['is_use_json']
 
     # Calculate max tokens
-    encoding = tiktoken.get_encoding('cl100k_base')
+    encoding              = tiktoken.get_encoding('cl100k_base')
     model_max_tokens: int = model_2_tokens[llm_model]
-    max_tokens: int = len(encoding.encode(prompt))
+    max_tokens: int       = len(encoding.encode(prompt))
+    max_tokens: int = 4000
+    
 
     if is_use_json:
         response = client.chat.completions.create(
@@ -374,6 +388,7 @@ def query_openai(prompt: str, llm_model: str, output_type: str, llm_kwargs: Dict
             result = response.choices[0].message.content.replace("```json", "").replace("\n```", "").replace("```", "").strip("\n")
             result = result[result.index("{"):]
             result: Dict[str, str] = dirtyjson.loads(result)
+            
         except openai.RateLimitError as e:
             raise e
         except openai.APIError as e:
@@ -398,15 +413,18 @@ def query_openai(prompt: str, llm_model: str, output_type: str, llm_kwargs: Dict
         if str(type(result)) == "<class 'dirtyjson.attributed_containers.AttributedDict'>":
             result = { key: val for key, val in result.items() }
         return CriterionAssessment(**result), stats
+    
     else:
+        try:
+            global_result = int(result['global_decision'])
+        except:
+            global_result = 3
         if str(type(result)) == "<class 'dirtyjson.attributed_containers.AttributedList'>":
-            result = {
-                'assessments' : [
-                    { key: val for key, val in x.items() }
-                    for x in result['assessments']
-                ],
-            }
-        return CriterionAssessments(**result), stats
+            result        = {'assessments' : [{ key: val for key, val in x.items() } for x in result['assessments']]}
+        if is_add_global_decision:
+            return CriterionAssessments(**result), stats, global_result
+        else:
+            return CriterionAssessments(**result), stats
 
 def plot_confusion_matrices(df: pd.DataFrame, file_name: Optional[str] = None):
     # Unique labels
