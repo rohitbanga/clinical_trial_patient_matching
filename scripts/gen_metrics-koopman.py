@@ -16,15 +16,9 @@ from utils.metrics import calc_metrics, plot_confusion_matrices
 import argparse
 from tqdm import tqdm
 import numpy as np
+import argparse
 
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description='Evaluate the model on the given data')
-    parser.add_argument('path_to_csv', type=str, help='Path to eval.py output')
-    args   = parser.parse_args()
-    return args
-
-def gen_metrics(file_name: str, path_to_data: str):
+def gen_metrics(file_name: str):
     # Load results.csv
     df = pd.read_csv(f"{file_name}.csv")
 
@@ -60,10 +54,6 @@ def gen_metrics(file_name: str, path_to_data: str):
     save_metrics_as_file(metrics_local,filename=f"{file_name}_local.txt")
     save_metrics_as_file(metrics_local,filename=f"{file_name}_global.txt")
 
-
-
-        
-        
 def judge(inclussion_df,exclussion_df):
     all_inclussion:int = int(np.prod(inclussion_df["is_met"]))
     all_exclusion:int  = int(np.prod(exclussion_df["is_met"]))
@@ -82,3 +72,16 @@ def save_metrics_as_file(metrics_dict, filename):
     with open(filename+".log", 'w') as file:
         for key, value in metrics_dict.items():
             file.write(json.dumps({key: value}) + '\n')
+
+def main():
+    parser = argparse.ArgumentParser(description="Generate metrics from data.")
+    parser.add_argument("file_name", type=str, help="Name of the file")
+    args = parser.parse_args()
+    gen_metrics(args.file_name)
+
+if __name__ == "__main__":
+    main()
+
+
+
+### python scripts/gen_metrics-koopman.py  --file_name outputs/2024-03-15-23-10-24/koopman_gpt-3.5-turbo-0125
