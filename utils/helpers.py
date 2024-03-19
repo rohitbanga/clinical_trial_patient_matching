@@ -1,3 +1,4 @@
+import pickle
 from dotenv import load_dotenv
 load_dotenv()
 import json
@@ -234,6 +235,9 @@ def _batch_query_openai_worker(args):
                          n_retries=2, 
                          is_frequency_penalty=is_frequency_penalty,
                          is_add_global_decision =is_add_global_decision)
+        os.makedirs('./outputs/', exist_ok=True)
+        with open(f'./outputs/{idx}.pkl') as fd:
+            pickle.dump(q, fd)
         return q
     except openai.RateLimitError:
         print("Rate limit exceeded -- waiting 30 seconds before retrying")

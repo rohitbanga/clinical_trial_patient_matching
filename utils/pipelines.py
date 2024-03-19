@@ -390,12 +390,15 @@ def prompt__all_criteria_koopman(patient: Dict[str, Any],
                                  is_exclude_rationale: bool = False) -> str:
     """Given a clinical note and all criteria, constructs a prompt for the LLM."""
     
-    inclusion_criteria: str = "\n".join([ f"- inclusion_criteria_{i}: {criteria}" for i,criteria in enumerate(trail["inclusion_criteria"]) ])
-    exclusion_criteria: str = "\n".join([ f"- exclusion_criteria_{i}: {criteria}" for i,criteria in enumerate(trail["exclusion_criteria"]) ])
+    inclusion_criteria: str = "\n".join([ f"- inclusion_criteria_{i}: {criteria.replace('\n', '; ')}" for i,criteria in enumerate(trail["inclusion_criteria"]) ])
+    exclusion_criteria: str = "\n".join([ f"- exclusion_criteria_{i}: {criteria.replace('\n', '; ')}" for i,criteria in enumerate(trail["exclusion_criteria"]) ])
     
     prompt: str = f"""
 # Task
-Your job is to indicate which of the following inclusion and exlusion  criteria is met by the patient
+Your job is to indicate which of the following inclusion and exclusion criteria are met by the patient.
+
+For an **inclusion** criteria to be "met", the patient must have the condition described in the criteria. 
+For an **exclusion** criteria to be "met", the patient must NOT have the condition described in the criteria.
 
 # Patient
 
@@ -422,26 +425,26 @@ Format your response as a JSON list of dictionaries, where each dictionary conta
 * criterion: str - The name of the criterion being assessed
 * medications_and_supplements: List[str] - The names of all current medications and supplements that the patient is taking
 {'* rationale: str - Your reasoning as to why the patient does or does not meet that criterion' if not is_exclude_rationale else ''}
-* is_met: bool - "true" if the patient meets that criterion, or it can be inferred that they meet that criterion with common sense. "false" if the patient does not or it is impossible to assess this given the provided information.
+* is_met: bool - "true" if the patient meets that criterion, or it can be inferred that they meet that criterion with common sense. "false" if the patient does not or it is impossible to assess this given the provided information; For inclusion criteria, the criterion is met if the patient has the condition described in the criteria. For exclusion criteria, the criterion is met if the patient does NOT have the condition described in the criteria.
 * confidence: str - Either "low", "medium", or "high" to reflect your confidence in your response
 
 {'# Overall Eligibility Decision' if is_add_global_decision else ''}
 {'At the root of your JSON object, also include the following global assessment of the patient eligibility for the trial' if is_add_global_decision else ''}
-{'*global_decision:int - Either `0` for a patient that is definitely not compatible with trial. `1` for a patient that might be compatible. `2` for a patient that is likely to be compatible with the trial. Be lenient in your judgement -- if the patient appears to meet most criteria, but some criteria are uncertain or indeterminate, then default to `2`. ' if is_add_global_decision else ''}
+{'*global_decision:int - Either `0` for a patient that is definitely not eligible for the trial given your assessment of their inclusion and exclusion criteria. `1` for a patient that might be eligible for the trial. `2` for a patient that is likely to be eligible for the trial. Be lenient in your judgement -- if the patient appears to meet most criteria, but some criteria are uncertain or indeterminate, then default to `2`. ' if is_add_global_decision else ''}
 
 An example of how your JSON response should be formatted is shown below, where the list of JSON dictionaries is stored in the "assessments" key:
 ```json
 {{ 
     "assessments" : [
         {{
-            "criteria_1" : "something",
+            "inclusion_criteria_1" : "something",
             "medications_and_supplements" : [ "medication_1", "medication_2"],
             {'"rationale" : "something something",' if not is_exclude_rationale else ''}
             "is_met" : true/false,
             "confidence" : "low/medium/high",
         }},
         {{
-            "criteria_2" : "something",
+            "exclusion_criteria_1" : "something",
             "medications_and_supplements" : [],
             {'"rationale" : "something something",' if not is_exclude_rationale else ''}
             "is_met" : true/false,
@@ -452,9 +455,9 @@ An example of how your JSON response should be formatted is shown below, where t
     {'"global_decision" : 0/1/2,' if is_add_global_decision else ''}
 }}
 ```
-The above example is only for illustration purposes only. It does not reflect the actual criteria or patient for this task.
+The above example is for illustration purposes only. It does not reflect the actual criteria or patient for this task.
 
-Please analyze the given patient and inclusion and exclusion criteria {'as well as an overall eligibility decision' if is_add_global_decision else ''}. Remember to include all  inclusion and exclusion criteria in your returned JSON dictionary. Please provide your JSON response:
+Please analyze the given patient and the trial's inclusion and exclusion criteria {'as well as an overall eligibility decision' if is_add_global_decision else ''}. Remember to include all  inclusion and exclusion criteria in your returned JSON dictionary. Please provide your JSON response:
 """
     return prompt, len(inclusion_criteria) + len(exclusion_criteria)
 

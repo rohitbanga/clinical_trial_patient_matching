@@ -1,12 +1,3 @@
-try: 
-    import sys
-    utils_path = "/pasteur/u/ale9806/Repositories/clinical_trial_patient_matching"
-    sys.path.append(utils_path)
-    print("added path")
-except:
-    pass
-
-
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -24,7 +15,6 @@ import argparse
 from typing import Dict, List, Any, Optional, Set
 from utils.data_loader import XMLDataLoaderKoopman
 from utils.types import  UsageStat
-from utils.helpers import get_relevant_docs_for_criteria, load_model, load_collection
 
 api_key = os.environ.get("OPENAI_API_KEY")
 if api_key:
@@ -68,23 +58,21 @@ if __name__ == '__main__':
     
 
     # Load data
-    dataloader = XMLDataLoaderKoopman("/pasteur/u/ale9806/Repositories/PMCT/data/koopman/data/")
-    dataset    = dataloader.load_data(load_from_json = "/data/koopman/patient_trail_dataset.json")
+    dataloader = XMLDataLoaderKoopman("/Users/michaelwornow/Desktop/clinical_trial_patient_matching/data/koopman/data/")
+    dataset    = dataloader.load_data(load_from_json = "/Users/michaelwornow/Desktop/clinical_trial_patient_matching/data/patient_trail_dataset.json")
     
     # Select patient range (if specfied)
     if patient_range is not None:
         start_idx, end_idx = [ int(x) for x in patient_range.split(',') ]
         assert start_idx <= end_idx, "Start idx must be <= end idx"
         assert start_idx >= 0 and end_idx < len(dataset["patients"]), f"Start idx must be >= 0 and end idx must be < {len(dataset)}"
-        dataset = dataset["patients"][int(start_idx):int(end_idx)+1]
-
-
+        dataset['patients'] = dataset["patients"][int(start_idx):int(end_idx)+1]
     
     # Load LLMs
     llm_kwargs = {}
     if 'gpt-' in llm_model or 'GPT4' in llm_model:
         # OpenAI model
-        if llm_model in ['GPT4-32k', 'shc-gpt-35-turbo-16k']:
+        if llm_model in ['GPT4-32k', 'GPT4-32k-2', 'shc-gpt-35-turbo-16k']:
             # Azure SHC
             llm_kwargs['openai_client'] = openai.AzureOpenAI(
                 base_url=f"https://shcopenaisandbox.openai.azure.com/openai/deployments/{llm_model}/chat/completions?api-version=2024-02-15-preview",
@@ -115,14 +103,11 @@ if __name__ == '__main__':
                                           llm_model, 
                                           llm_kwargs, 
                                           is_exclude_rationale=is_exclude_rationale,
-                                          add_gloabl_decision= True)
+                                          is_add_global_decision= True)
         
         results.extend(results_i)
         stats.extend(stats_i)
         
-        #if counter_pa == 2:
-        #    break
-      
     
     try:
         df_results = pd.DataFrame(results)
@@ -141,7 +126,7 @@ if __name__ == '__main__':
     if llm_model == 'gpt-4-1106-preview':
         cost_per_1k_completion_tokens = 0.01
         cost_per_1k_prompt_tokens = 0.03
-    elif llm_model == 'gpt-4-32k' or llm_model == 'GPT4-32k':
+    elif llm_model == 'gpt-4-32k' or llm_model == 'GPT4-32k' or llm_model == 'GPT4-32k-2':
         cost_per_1k_completion_tokens = 0.06
         cost_per_1k_prompt_tokens = 0.12
     elif llm_model == 'gpt-4':

@@ -1,12 +1,3 @@
-try: 
-    import sys
-    utils_path = "/pasteur/u/ale9806/Repositories/clinical_trial_patient_matching"
-    sys.path.append(utils_path)
-    print("added path")
-except:
-    pass
-
-
 import os
 import re
 import pandas as pd
@@ -20,6 +11,7 @@ import argparse
 
 def gen_metrics(file_name: str):
     # Load results.csv
+    file_name = file_name.replace(".csv", "")
     df = pd.read_csv(f"{file_name}.csv")
 
     # Logging
@@ -75,7 +67,7 @@ def save_metrics_as_file(metrics_dict, filename):
 
 def main():
     parser = argparse.ArgumentParser(description="Generate metrics from data.")
-    parser.add_argument("file_name", type=str, help="Name of the file")
+    parser.add_argument("--file_name", type=str, help="Name of the file")
     args = parser.parse_args()
     gen_metrics(args.file_name)
 
