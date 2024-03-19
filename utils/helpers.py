@@ -37,6 +37,7 @@ SYSTEM_PROMPT = "You are an expert clinical research coordinator tasked with ass
 
 model_2_tokens = {
     'GPT4-32k' : 32_000,
+    'GPT4-32k-2' : 32_000,
     'shc-gpt-35-turbo-16k' : 16_000,
     'Qwen/Qwen-72B-Chat' : 32_000,
     'mistralai/Mixtral-8x7B-v0.1' : 32_000,
@@ -207,11 +208,11 @@ def prompt_to_qwen(message: str, system_prompt: str = SYSTEM_PROMPT) -> str:
     return f'<|im_start|>{message}<|im_end|>\n'
 
 def _batch_query_openai_worker(args):
-    idx, prompt, llm_model, output_type, is_frequency_penalty,add_gloabl_decision = args
+    idx, prompt, llm_model, output_type, is_frequency_penalty, is_add_global_decision = args
 
     # OpenAI model
     llm_kwargs = {}
-    if llm_model in ['GPT4-32k', 'shc-gpt-35-turbo-16k']:
+    if llm_model in ['GPT4-32k', 'GPT4-32k-2', 'shc-gpt-35-turbo-16k']:
         # Azure SHC
         llm_kwargs['openai_client'] = openai.AzureOpenAI(
             base_url=f"https://shcopenaisandbox.openai.azure.com/openai/deployments/{llm_model}/chat/completions?api-version=2023-07-01-preview",
@@ -232,7 +233,7 @@ def _batch_query_openai_worker(args):
                          idx, 
                          n_retries=2, 
                          is_frequency_penalty=is_frequency_penalty,
-                         add_gloabl_decision =add_gloabl_decision)
+                         is_add_global_decision =is_add_global_decision)
         return q
     except openai.RateLimitError:
         print("Rate limit exceeded -- waiting 30 seconds before retrying")
@@ -253,19 +254,14 @@ def _batch_query_openai_worker(args):
     except Exception as e:
         traceback.print_exc()
         print(f"Unknown error: {e}")
-        sys.exit(1)
+        if is_add_global_decision:
+            return None, None, None
+        return None, None
 
-def batch_query_openai(prompts:     List[str], 
-                       llm_model:   str, 
-                       output_type: str, 
-                       n_procs:     int = 10, 
-                       is_frequency_penalty: bool = False,
-                       add_gloabl_decision:   bool = False) -> List[Tuple[Union[CriterionAssessment, CriterionAssessments], UsageStat]]:
-    
-    tasks   = [ (idx, prompt, llm_model, output_type, is_frequency_penalty,add_gloabl_decision) for idx, prompt in enumerate(prompts) ]
-    results = []
-    for task in tqdm(tasks, desc='Running batch_query_openai()...'):
-        results.append(_batch_query_openai_worker(task))
+def batch_query_openai(prompts: List[str], llm_model: str, output_type: str, n_procs: int = 5, is_frequency_penalty: bool = False, is_add_global_decision: bool = False) -> List[Tuple[Union[CriterionAssessment, CriterionAssessments], UsageStat]]:
+    tasks = [ (idx, prompt, llm_model, output_type, is_frequency_penalty, is_add_global_decision) for idx, prompt in enumerate(prompts) ]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=n_procs) as pool:
+        results: List[Tuple[Union[CriterionAssessment, CriterionAssessments], UsageStat]] = list(tqdm(pool.map(_batch_query_openai_worker, tasks), desc='Running batch_query_openai()...', total=len(tasks)))
     return results
 
 def batch_query_hf(prompts: Union[List[str], str], llm_model: str, output_type: str, llm_kwargs: Dict[str, Any], n_retries: int = 0) -> List[Tuple[Union[CriterionAssessment, CriterionAssessments], UsageStat]]:
@@ -348,8 +344,8 @@ def query_openai(prompt:      str,
                  llm_kwargs: Dict[str, Any], 
                  idx:        int, 
                  n_retries: int = 4, 
-                is_frequency_penalty: bool = False,
-                 add_gloabl_decision:bool = False ) -> Tuple[Union[CriterionAssessment, CriterionAssessments], UsageStat]:
+                 is_frequency_penalty: bool = False,
+                 is_add_global_decision: bool = False ) -> Tuple[Union[CriterionAssessment, CriterionAssessments], UsageStat]:
     """Queries OpenAI model with the given prompt and returns the JSON response."""
     client            = llm_kwargs['openai_client']
     is_use_json: bool = llm_kwargs['is_use_json']
@@ -371,7 +367,7 @@ def query_openai(prompt:      str,
                 {"role": "user", "content": prompt},
             ],
             response_format={"type": "json_object"},
-            max_tokens=max_tokens,#10_000, #min(max(1, model_max_tokens-max_tokens), 3000),
+            max_tokens=10_000 if llm_model in [ 'GPT4-32k', 'GPT4-32k-2' ] else min(max(1, model_max_tokens-max_tokens), 3000),
             model=llm_model,
             temperature=0 if n_retries < 1 else 0.1,
         )
@@ -386,7 +382,7 @@ def query_openai(prompt:      str,
                     },
                     {"role": "user", "content": prompt},
                 ],
-                max_tokens=max_tokens,#1000 #min(max(1, model_max_tokens-max_tokens), 4096) if not is_frequency_penalty else 10_000,
+                max_tokens=10_000 if llm_model in [ 'GPT4-32k', 'GPT4-32k-2' ] else min(max(1, model_max_tokens-max_tokens), 4096), # if not is_frequency_penalty else 10_000),
                 model=llm_model,
                 temperature=0 if n_retries < 1 else 0.1,
                 frequency_penalty=0 if not is_frequency_penalty else (0 if n_retries < 1 else 0.1),
@@ -410,6 +406,8 @@ def query_openai(prompt:      str,
                 return query_openai(prompt, llm_model, output_type, llm_kwargs, idx, n_retries = n_retries + 1, is_frequency_penalty=is_frequency_penalty)
             else:
                 print('Giving up...')
+                if is_add_global_decision:
+                    return None, None, None
                 return None, None
     
     # Get usage stats
@@ -421,18 +419,14 @@ def query_openai(prompt:      str,
         return CriterionAssessment(**result), stats
     
     else:
-        
         try:
             global_result = int(result['global_decision'])
         except:
             global_result = 3
-            
         if str(type(result)) == "<class 'dirtyjson.attributed_containers.AttributedList'>":
-            result        = {'assessments' : [{ key: val for key, val in x.items() } for x in result['assessments']]}
-        
-        
-        if add_gloabl_decision:
-            return CriterionAssessments(**result), stats,global_result
+            result = {'assessments' : [{ key: val for key, val in x.items() } for x in result['assessments']]}
+        if is_add_global_decision:
+            return CriterionAssessments(**result), stats, global_result
         else:
             return CriterionAssessments(**result), stats
 

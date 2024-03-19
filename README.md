@@ -50,7 +50,7 @@ python scripts/eval.py --llm_model 'GPT4-32k' --strategy 'all_criteria_each_note
 python scripts/eval.py --llm_model 'shc-gpt-35-turbo-16k' --strategy 'all_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999
 python scripts/eval.py --llm_model 'shc-gpt-35-turbo-16k' --strategy 'all_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999 --is_use_orig_defs
 ```
-Conclusion: Original definitions perform worse
+
 
 ## Retrieval Pipeline
 
@@ -123,12 +123,26 @@ python scripts/eval.py --llm_model 'Qwen/Qwen-72B-Chat' --strategy 'each_criteri
 python scripts/eval.py --is_exclude_rationale --llm_model 'GPT4-32k' --strategy 'all_criteria_all_notes' --is_chunk_keep_full_note --n_chunks 9999
 python scripts/eval.py --is_exclude_rationale --llm_model 'GPT4-32k' --strategy 'all_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999
 python scripts/eval.py --is_exclude_rationale --llm_model 'GPT4-32k' --strategy 'each_criteria_all_notes' --is_chunk_keep_full_note --n_chunks 9999
-python scripts/eval.py --is_exclude_rationale --llm_model 'GPT4-32k' --strategy 'each_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999
+python scripts/eval.py --is_exclude_rationale --llm_model 'GPT4-32k-2' --strategy 'each_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999
 
 python scripts/eval.py --is_exclude_rationale --llm_model 'shc-gpt-35-turbo-16k' --strategy 'all_criteria_all_notes' --is_chunk_keep_full_note --n_chunks 9999
 python scripts/eval.py --is_exclude_rationale --llm_model 'shc-gpt-35-turbo-16k' --strategy 'all_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999
 python scripts/eval.py --is_exclude_rationale --llm_model 'shc-gpt-35-turbo-16k' --strategy 'each_criteria_all_notes' --is_chunk_keep_full_note --n_chunks 9999
 python scripts/eval.py --is_exclude_rationale --llm_model 'shc-gpt-35-turbo-16k' --strategy 'each_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999
+```
+
+## Few-Shot
+
+```bash
+# One shot
+python scripts/eval.py --n_few_shot_examples 1 --llm_model 'GPT4-32k-2' --strategy 'all_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999
+python scripts/eval.py --n_few_shot_examples 1 --llm_model 'GPT4-32k-2' --strategy 'all_criteria_all_notes' --is_chunk_keep_full_note --n_chunks 9999
+python scripts/eval.py --n_few_shot_examples 1 --llm_model 'GPT4-32k-2' --strategy 'each_criteria_all_notes' --is_chunk_keep_full_note --n_chunks 9999
+python scripts/eval.py --n_few_shot_examples 1 --llm_model 'GPT4-32k-2' --strategy 'each_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999
+
+python scripts/eval.py --n_few_shot_examples 1 --llm_model 'shc-gpt-35-turbo-16k' --strategy 'all_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999
+python scripts/eval.py --n_few_shot_examples 1 --llm_model 'shc-gpt-35-turbo-16k' --strategy 'all_criteria_all_notes' --is_chunk_keep_full_note --n_chunks 9999
+python scripts/eval.py --n_few_shot_examples 1 --llm_model 'shc-gpt-35-turbo-16k' --strategy 'each_criteria_all_notes' --is_chunk_keep_full_note --n_chunks 9999
 ```
 
 ## Troubleshooting

@@ -6,7 +6,8 @@ from tqdm import tqdm
 from utils.data_loader import XMLDataLoader
 from utils.helpers import batch_query_openai, batch_query_hf, model_2_tokens
 from utils.types import CriterionAssessment, UsageStat
-from typing import Dict, List, Any, Set, Tuple, Union
+from typing import Dict, List, Any, Optional, Set, Tuple, Union
+from utils.few_shot_examples import one_criteria_one_shot, all_criteria_one_shot, one_criteria_two_shot, all_criteria_two_shot
 
 def truncate_doc(tokenizer, doc: str, max_tokens: int) -> str:
     """Truncate the document to a maximum number of tokens."""
@@ -73,12 +74,22 @@ def generate_result_koopman(query:dict,
         
     return response_dict
     
-def prompt__one_criteria(patient: Dict[str, Any], note: str, criterion: str, definition: str, is_exclude_rationale: bool = False) -> str:
+def prompt__one_criteria(patient: Dict[str, Any], note: str, criterion: str, definition: str, is_exclude_rationale: bool = False, n_few_shot_examples: Optional[int] = None) -> str:
     """Given a clinical note, specific criterion, and that criterion's definition, constructs a prompt for the LLM."""
+    
+    # Few-shot
+    section__few_shot_examples = ''
+    if n_few_shot_examples == 1:
+        section__few_shot_examples = one_criteria_one_shot(is_exclude_rationale)
+    elif n_few_shot_examples == 2:
+        section__few_shot_examples = one_criteria_two_shot(is_exclude_rationale)
+
     prompt: str = f"""
 
 # Task
 Your job is to decide whether the given patient meets the inclusion criterion.
+
+{section__few_shot_examples}
 
 # Patient
 
@@ -117,6 +128,7 @@ An example of how your JSON response should be formatted is shown below:
     "confidence" : "low/medium/high",
 }}
 ```
+
 The above example is only for illustration purposes only. It does not reflect the actual criterion or patient for this task.
 
 Please provide your response:
@@ -135,7 +147,8 @@ def pipeline(dataloader: XMLDataLoader,
             is_all_criteria: bool = False,
             is_all_notes: bool = False,
             is_chunk_keep_full_note: bool = False,
-            is_exclude_rationale: bool = False) -> Tuple[List[Dict[str, Any]], List[UsageStat]]:
+            is_exclude_rationale: bool = False,
+            n_few_shot_examples: Optional[int] = None) -> Tuple[List[Dict[str, Any]], List[UsageStat]]:
     """For each criterion, look at `each / all notes at once` and query the LLM to asses if match or not."""
     results: List[Dict[str, Any]] = []
     stats: List[UsageStat] = []
@@ -144,9 +157,9 @@ def pipeline(dataloader: XMLDataLoader,
     # Count tokens in prompt for truncation
     if 'tokenizer' in llm_kwargs:
         if is_all_criteria:
-            n_tokens_in_prompt: int = len(llm_kwargs['tokenizer'].encode(prompt__all_criteria(patients[0], '', dataloader.definitions, is_exclude_rationale=is_exclude_rationale)))
+            n_tokens_in_prompt: int = len(llm_kwargs['tokenizer'].encode(prompt__all_criteria(patients[0], '', dataloader.definitions, is_exclude_rationale=is_exclude_rationale, n_few_shot_examples=n_few_shot_examples)))
         else:
-            n_tokens_in_prompt: int = len(llm_kwargs['tokenizer'].encode(prompt__one_criteria(patients[0], '', dataloader.criteria[0], dataloader.definitions[dataloader.criteria[0]], is_exclude_rationale=is_exclude_rationale)))
+            n_tokens_in_prompt: int = len(llm_kwargs['tokenizer'].encode(prompt__one_criteria(patients[0], '', dataloader.criteria[0], dataloader.definitions[dataloader.criteria[0]], is_exclude_rationale=is_exclude_rationale, n_few_shot_example=n_few_shot_examples)))
 
     criteria: List[str] = [ 'all' ] if is_all_criteria else dataloader.criteria
     for patient in patients:
@@ -182,10 +195,10 @@ def pipeline(dataloader: XMLDataLoader,
                 if is_all_criteria:
                     if 'tokenizer' in llm_kwargs and model_2_tokens[llm_model] < 32_000:
                         doc = truncate_doc(llm_kwargs['tokenizer'], doc, max_tokens=model_2_tokens[llm_model] - n_tokens_in_prompt - 64) # buffer of 50 tokens
-                    prompt: str = prompt__all_criteria(patient, doc, dataloader.definitions, is_exclude_rationale=is_exclude_rationale)
+                    prompt: str = prompt__all_criteria(patient, doc, dataloader.definitions, is_exclude_rationale=is_exclude_rationale, n_few_shot_examples=n_few_shot_examples)
                     queries.append(Query(patient=patient, note=doc, note_idx=note_idx, criterion=None, definition=None, prompt=prompt))
                 else:
-                    prompt: str = prompt__one_criteria(patient, doc, criterion, dataloader.definitions[criterion], is_exclude_rationale=is_exclude_rationale)
+                    prompt: str = prompt__one_criteria(patient, doc, criterion, dataloader.definitions[criterion], is_exclude_rationale=is_exclude_rationale, n_few_shot_examples=n_few_shot_examples)
                     queries.append(Query(patient=patient, note=doc, note_idx=note_idx, criterion=criterion, definition=dataloader.definitions[criterion], prompt=prompt))
 
     # Sanity checks
@@ -235,14 +248,12 @@ def pipeline(dataloader: XMLDataLoader,
                     results.append(generate_result(query.patient, query.note, query.note_idx, query.prompt, null_assessment(criterion=criterion, rationale=None, is_met=None, confidence=None, medications_and_supplements=[]), stat))
     return results, stats
 
-
-
 def pipeline_koopman(dataset, 
             patient: List[Dict[str, Any]],
             llm_model: str,
             llm_kwargs: Dict,
             is_exclude_rationale: bool = False,
-            add_gloabl_decision:bool   = True,) -> Tuple[List[Dict[str, Any]], List[UsageStat]]:
+            is_add_global_decision:bool   = True,) -> Tuple[List[Dict[str, Any]], List[UsageStat]]:
     
     """For each criterion, look at `each / all notes at once` and query the LLM to asses if match or not."""
     results: List[Dict[str, Any]] = []
@@ -250,28 +261,23 @@ def pipeline_koopman(dataset,
     queries: List[namedtuple] = []
 
     
-    
     for label in tqdm(patient["labels"]):
         trail       =  dataset["trails"][label["trail"]]
         
         prompt,n_criterias = prompt__all_criteria_koopman(patient,
                                                           trail,
                                                           is_exclude_rationale=is_exclude_rationale, 
-                                                          add_gloabl_decision = add_gloabl_decision)
+                                                          is_add_global_decision = is_add_global_decision)
         queries.append({"patient":patient,
                         "trail":trail,
                         "trail_id":label["trail"],
                         "prompt":prompt,
                         "label":label["label"],
                         "total_criterion":n_criterias})
-    
-    # for debugging
-    #queries = [queries[0]]
-    #import pdb;pdb.set_trace()
 
     # Query LLM whether it satisfies the criteria
     if 'openai_client' in llm_kwargs:
-        responses: List[Tuple] = batch_query_openai([ x["prompt"] for x in queries ], llm_model, 'CriterionAssessments',add_gloabl_decision=add_gloabl_decision)
+        responses: List[Tuple] = batch_query_openai([ x["prompt"] for x in queries ], llm_model, 'CriterionAssessments',is_add_global_decision=is_add_global_decision)
         
     else:
         responses: List[Tuple] = batch_query_hf([ x["prompt"] for x in queries ], llm_model, 'CriterionAssessments')
@@ -279,7 +285,7 @@ def pipeline_koopman(dataset,
 
     
     # Process each response
-    for (response, stat,gloabl_response), query in zip(responses, queries):
+    for (response, stat, global_response), query in zip(responses, queries):
         is_response_null: bool = response is None
         
         if is_response_null:
@@ -287,27 +293,37 @@ def pipeline_koopman(dataset,
                                                                      rationale =None, 
                                                                      is_met     =None, 
                                                                      confidence =None, 
-                                                                     medications_and_supplements=[]) for criterion in range(0,queryn_criterias["total_criterion"])])
-            gloabl_response = 3
+                                                                     medications_and_supplements=[]) for criterion in range(0,query["total_criterion"])])
+            global_response = 3
             
     
         assessments: List[CriterionAssessment] = response.assessments 
         stats.append(stat)
      
         for assessment_idx, assessment in enumerate(assessments):
-            results.append(generate_result_koopman(query, assessment, stat,gloabl_response))
+            results.append(generate_result_koopman(query, assessment, stat,global_response))
         
        
     return results, stats
 
 
-def prompt__all_criteria(patient: Dict[str, Any], note: str, criteria_2_definition: Dict[str, str], is_exclude_rationale: bool = False) -> str:
+def prompt__all_criteria(patient: Dict[str, Any], note: str, criteria_2_definition: Dict[str, str], is_exclude_rationale: bool = False, n_few_shot_examples: Optional[int] = None) -> str:
     """Given a clinical note and all criteria, constructs a prompt for the LLM."""
     section_criteria: str = "\n".join([ f"- {criterion}: {definition}" for criterion, definition in criteria_2_definition.items() ])
+    
+    # Few-shot
+    section__few_shot_examples = ''
+    if n_few_shot_examples == 1:
+        section__few_shot_examples = all_criteria_one_shot(is_exclude_rationale)
+    elif n_few_shot_examples == 2:
+        section__few_shot_examples = all_criteria_two_shot(is_exclude_rationale)
+    
     prompt: str = f"""
 
 # Task
 Your job is to decide which of the following inclusion criteria the given patient meets.
+
+{section__few_shot_examples}
 
 # Patient
 
@@ -359,6 +375,7 @@ An example of how your JSON response should be formatted is shown below, where t
     ]
 }}
 ```
+
 The above example is only for illustration purposes only. It does not reflect the actual criteria or patient for this task.
 
 Please analyze the given patient and inclusion criteria. Remember to include all inclusion criteria in your returned JSON dictionary. Please provide your JSON response:
@@ -369,7 +386,7 @@ Please analyze the given patient and inclusion criteria. Remember to include all
 
 def prompt__all_criteria_koopman(patient: Dict[str, Any], 
                                  trail:   Dict[str, Any],
-                                 add_gloabl_decision:bool   = False,
+                                 is_add_global_decision:bool   = False,
                                  is_exclude_rationale: bool = False) -> str:
     """Given a clinical note and all criteria, constructs a prompt for the LLM."""
     
@@ -408,9 +425,9 @@ Format your response as a JSON list of dictionaries, where each dictionary conta
 * is_met: bool - "true" if the patient meets that criterion, or it can be inferred that they meet that criterion with common sense. "false" if the patient does not or it is impossible to assess this given the provided information.
 * confidence: str - Either "low", "medium", or "high" to reflect your confidence in your response
 
-
-{'# Global decision' if add_gloabl_decision else ''}
-{'*global_decision:int -either 0 for a patient that is not compatible with trial. 1 for a patient that might be compatible.  2 for a  patient that is compatible with the  trial' if add_gloabl_decision else ''}
+{'# Overall Eligibility Decision' if is_add_global_decision else ''}
+{'At the root of your JSON object, also include the following global assessment of the patient eligibility for the trial' if is_add_global_decision else ''}
+{'*global_decision:int - Either `0` for a patient that is definitely not compatible with trial. `1` for a patient that might be compatible. `2` for a patient that is likely to be compatible with the trial. Be lenient in your judgement -- if the patient appears to meet most criteria, but some criteria are uncertain or indeterminate, then default to `2`. ' if is_add_global_decision else ''}
 
 An example of how your JSON response should be formatted is shown below, where the list of JSON dictionaries is stored in the "assessments" key:
 ```json
@@ -431,13 +448,13 @@ An example of how your JSON response should be formatted is shown below, where t
             "confidence" : "low/medium/high",
         }},
         ...
-    ]{',' if  add_gloabl_decision else ''}
-    {'"global_decision":0/1/2,' if add_gloabl_decision else ''}
+    ]{',' if  is_add_global_decision else ''}
+    {'"global_decision" : 0/1/2,' if is_add_global_decision else ''}
 }}
 ```
 The above example is only for illustration purposes only. It does not reflect the actual criteria or patient for this task.
 
-Please analyze the given patient and  inclusion and exclusion criteria {'as well as global decision' if add_gloabl_decision else ''}. Remember to include all  inclusion and exclusion criteria in your returned JSON dictionary. Please provide your JSON response:
+Please analyze the given patient and inclusion and exclusion criteria {'as well as an overall eligibility decision' if is_add_global_decision else ''}. Remember to include all  inclusion and exclusion criteria in your returned JSON dictionary. Please provide your JSON response:
 """
     return prompt, len(inclusion_criteria) + len(exclusion_criteria)
 
