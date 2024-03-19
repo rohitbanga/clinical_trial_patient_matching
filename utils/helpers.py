@@ -254,6 +254,8 @@ def _batch_query_openai_worker(args):
     except Exception as e:
         traceback.print_exc()
         print(f"Unknown error: {e}")
+        if is_add_global_decision:
+            return None, None, None
         return None, None
 
 def batch_query_openai(prompts: List[str], llm_model: str, output_type: str, n_procs: int = 5, is_frequency_penalty: bool = False, is_add_global_decision: bool = False) -> List[Tuple[Union[CriterionAssessment, CriterionAssessments], UsageStat]]:
@@ -404,6 +406,8 @@ def query_openai(prompt:      str,
                 return query_openai(prompt, llm_model, output_type, llm_kwargs, idx, n_retries = n_retries + 1, is_frequency_penalty=is_frequency_penalty)
             else:
                 print('Giving up...')
+                if is_add_global_decision:
+                    return None, None, None
                 return None, None
     
     # Get usage stats
@@ -420,7 +424,7 @@ def query_openai(prompt:      str,
         except:
             global_result = 3
         if str(type(result)) == "<class 'dirtyjson.attributed_containers.AttributedList'>":
-            result        = {'assessments' : [{ key: val for key, val in x.items() } for x in result['assessments']]}
+            result = {'assessments' : [{ key: val for key, val in x.items() } for x in result['assessments']]}
         if is_add_global_decision:
             return CriterionAssessments(**result), stats, global_result
         else:

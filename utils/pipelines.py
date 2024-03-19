@@ -253,7 +253,7 @@ def pipeline_koopman(dataset,
             llm_model: str,
             llm_kwargs: Dict,
             is_exclude_rationale: bool = False,
-            add_gloabl_decision:bool   = True,) -> Tuple[List[Dict[str, Any]], List[UsageStat]]:
+            is_add_global_decision:bool   = True,) -> Tuple[List[Dict[str, Any]], List[UsageStat]]:
     
     """For each criterion, look at `each / all notes at once` and query the LLM to asses if match or not."""
     results: List[Dict[str, Any]] = []
@@ -267,7 +267,7 @@ def pipeline_koopman(dataset,
         prompt,n_criterias = prompt__all_criteria_koopman(patient,
                                                           trail,
                                                           is_exclude_rationale=is_exclude_rationale, 
-                                                          add_gloabl_decision = add_gloabl_decision)
+                                                          is_add_global_decision = is_add_global_decision)
         queries.append({"patient":patient,
                         "trail":trail,
                         "trail_id":label["trail"],
@@ -277,7 +277,7 @@ def pipeline_koopman(dataset,
 
     # Query LLM whether it satisfies the criteria
     if 'openai_client' in llm_kwargs:
-        responses: List[Tuple] = batch_query_openai([ x["prompt"] for x in queries ], llm_model, 'CriterionAssessments',add_gloabl_decision=add_gloabl_decision)
+        responses: List[Tuple] = batch_query_openai([ x["prompt"] for x in queries ], llm_model, 'CriterionAssessments',is_add_global_decision=is_add_global_decision)
         
     else:
         responses: List[Tuple] = batch_query_hf([ x["prompt"] for x in queries ], llm_model, 'CriterionAssessments')
@@ -293,7 +293,7 @@ def pipeline_koopman(dataset,
                                                                      rationale =None, 
                                                                      is_met     =None, 
                                                                      confidence =None, 
-                                                                     medications_and_supplements=[]) for criterion in range(0,queryn_criterias["total_criterion"])])
+                                                                     medications_and_supplements=[]) for criterion in range(0,query["total_criterion"])])
             global_response = 3
             
     
@@ -386,7 +386,7 @@ Please analyze the given patient and inclusion criteria. Remember to include all
 
 def prompt__all_criteria_koopman(patient: Dict[str, Any], 
                                  trail:   Dict[str, Any],
-                                 add_gloabl_decision:bool   = False,
+                                 is_add_global_decision:bool   = False,
                                  is_exclude_rationale: bool = False) -> str:
     """Given a clinical note and all criteria, constructs a prompt for the LLM."""
     
@@ -425,9 +425,9 @@ Format your response as a JSON list of dictionaries, where each dictionary conta
 * is_met: bool - "true" if the patient meets that criterion, or it can be inferred that they meet that criterion with common sense. "false" if the patient does not or it is impossible to assess this given the provided information.
 * confidence: str - Either "low", "medium", or "high" to reflect your confidence in your response
 
-
-{'# Global decision' if add_gloabl_decision else ''}
-{'*global_decision:int -either 0 for a patient that is not compatible with trial. 1 for a patient that might be compatible.  2 for a  patient that is compatible with the  trial' if add_gloabl_decision else ''}
+{'# Overall Eligibility Decision' if is_add_global_decision else ''}
+{'At the root of your JSON object, also include the following global assessment of the patient eligibility for the trial' if is_add_global_decision else ''}
+{'*global_decision:int - Either `0` for a patient that is definitely not compatible with trial. `1` for a patient that might be compatible. `2` for a patient that is likely to be compatible with the trial. Be lenient in your judgement -- if the patient appears to meet most criteria, but some criteria are uncertain or indeterminate, then default to `2`. ' if is_add_global_decision else ''}
 
 An example of how your JSON response should be formatted is shown below, where the list of JSON dictionaries is stored in the "assessments" key:
 ```json
@@ -448,13 +448,13 @@ An example of how your JSON response should be formatted is shown below, where t
             "confidence" : "low/medium/high",
         }},
         ...
-    ]{',' if  add_gloabl_decision else ''}
-    {'"global_decision":0/1/2,' if add_gloabl_decision else ''}
+    ]{',' if  is_add_global_decision else ''}
+    {'"global_decision" : 0/1/2,' if is_add_global_decision else ''}
 }}
 ```
 The above example is only for illustration purposes only. It does not reflect the actual criteria or patient for this task.
 
-Please analyze the given patient and  inclusion and exclusion criteria {'as well as global decision' if add_gloabl_decision else ''}. Remember to include all  inclusion and exclusion criteria in your returned JSON dictionary. Please provide your JSON response:
+Please analyze the given patient and inclusion and exclusion criteria {'as well as an overall eligibility decision' if is_add_global_decision else ''}. Remember to include all  inclusion and exclusion criteria in your returned JSON dictionary. Please provide your JSON response:
 """
     return prompt, len(inclusion_criteria) + len(exclusion_criteria)
 
