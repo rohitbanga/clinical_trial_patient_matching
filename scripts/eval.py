@@ -21,6 +21,9 @@ api_key = os.environ.get("OPENAI_API_KEY")
 if api_key:
     openai.api_key = api_key
 
+from huggingface_hub import login
+login("hf_xxxxx")
+
 PIPELINES = [
     'all_criteria_all_notes',
     'all_criteria_each_notes',
