@@ -27,10 +27,10 @@ import seaborn as sns
 
 try:
     from vllm import SamplingParams
-    PATH_TO_CHROMADB: str = '/share/pi/nigam/mwornow/pmct/data/chroma'
+    PATH_TO_CHROMADB: str = '/workspace/clinical_trial_patient_matching/data/chroma'
 except ImportError as e:
     # PATH_TO_CHROMADB: str = '/Users/mwornow/Dropbox/Stanford/Shah Lab/Papers/pmct/data/chroma'
-    PATH_TO_CHROMADB: str = '/Users/michaelwornow/Desktop/pmct/data/chroma'
+    PATH_TO_CHROMADB: str = '/workspace/clinical_trial_patient_matching/data/chroma'
     pass # ignore
 import tiktoken
 

@@ -1,4 +1,6 @@
 data/*
+!data/train
+!data/n2c2-t1_gold_standard_test_data
 .env
 .vscode/
 .DS_Store

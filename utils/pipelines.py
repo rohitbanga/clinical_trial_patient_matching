@@ -389,9 +389,9 @@ def prompt__all_criteria_koopman(patient: Dict[str, Any],
                                  is_add_global_decision:bool   = False,
                                  is_exclude_rationale: bool = False) -> str:
     """Given a clinical note and all criteria, constructs a prompt for the LLM."""
-    
-    inclusion_criteria: str = "\n".join([ f"- inclusion_criteria_{i}: {criteria.replace('\n', '; ')}" for i,criteria in enumerate(trail["inclusion_criteria"]) ])
-    exclusion_criteria: str = "\n".join([ f"- exclusion_criteria_{i}: {criteria.replace('\n', '; ')}" for i,criteria in enumerate(trail["exclusion_criteria"]) ])
+    nl = '\n'
+    inclusion_criteria: str = "\n".join([ f"- inclusion_criteria_{i}: {criteria.replace(nl, '; ')}" for i,criteria in enumerate(trail["inclusion_criteria"]) ])
+    exclusion_criteria: str = "\n".join([ f"- exclusion_criteria_{i}: {criteria.replace(nl, '; ')}" for i,criteria in enumerate(trail["exclusion_criteria"]) ])
     
     prompt: str = f"""
 # Task
