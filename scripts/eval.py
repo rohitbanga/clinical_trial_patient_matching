@@ -20,10 +20,6 @@ from utils.helpers import get_relevant_docs_for_criteria, load_model, load_colle
 api_key = os.environ.get("OPENAI_API_KEY")
 if api_key:
     openai.api_key = api_key
-else:
-    raise Exception(
-        "OpenAI API key not found. Please set the OPENAI_API_KEY environment variable."
-    )
 
 PIPELINES = [
     'all_criteria_all_notes',

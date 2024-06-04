@@ -4,8 +4,9 @@ How to install the repo:
 
 ```bash
 conda create -n pmct python=3.10 -y
-conda activate pmct
+source activate pmct
 pip install -r requirements.txt
+pip install vllm
 pip install -e .
 ```
 
