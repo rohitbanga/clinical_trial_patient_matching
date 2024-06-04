@@ -42,6 +42,7 @@ model_2_tokens = {
     'shc-gpt-35-turbo-16k' : 16_000,
     'Qwen/Qwen-72B-Chat' : 32_000,
     'mistralai/Mixtral-8x7B-v0.1' : 32_000,
+    'NousResearch/Hermes-2-Theta-Llama-3-8B': 8_000,
     'togethercomputer/Llama-2-7B-32K-Instruct' : 32_000,
     'NousResearch/Yarn-Llama-2-70b-32k' : 32_000,
     'gpt-3.5-turbo-0125' : 4_000,

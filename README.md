@@ -10,6 +10,17 @@ pip install vllm
 pip install -e .
 ```
 
+```bash
+source activate pmct
+
+python scripts/create_db.py --path_to_data ./data/train/ --embed_model 'sentence-transformers/all-MiniLM-L6-v2'
+
+python scripts/create_db.py --path_to_data ./data/n2c2-t1_gold_standard_test_data/test/ --embed_model 'sentence-transformers/all-MiniLM-L6-v2'
+
+python scripts/eval.py --llm_model 'NousResearch/Hermes-2-Theta-Llama-3-8B' --strategy 'all_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999 --tensor_parallel_size 4
+
+```
+
 # Generate Embeddings
 
 For our retrieval pipeline experiments, we need to first generate embeddings for each patients' notes. We test the `BAAI/bge-large-en-v1.5` and `sentence-transformers/all-MiniLM-L6-v2` models:
@@ -113,7 +124,7 @@ Test different open source models.
 python scripts/eval.py --llm_model 'GPT4-32k' --strategy 'all_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999
 python scripts/eval.py --llm_model 'shc-gpt-35-turbo-16k' --strategy 'all_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999
 python scripts/eval.py --llm_model 'mistralai/Mixtral-8x7B-Instruct-v0.1' --strategy 'all_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999 --tensor_parallel_size 4
-python scripts/eval.py --llm_model 'NousResearch/Yarn-Llama-2-70b-32k' --strategy 'all_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999 --tensor_parallel_size 4
+python scripts/eval.py --llm_model 'NousResearch/Hermes-2-Theta-Llama-3-8B' --strategy 'all_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999 --tensor_parallel_size 4
 # TBD
 python scripts/eval.py --llm_model 'Qwen/Qwen-72B-Chat' --strategy 'each_criteria_all_notes' --is_chunk_keep_full_note --n_chunks 9999 --tensor_parallel_size 4
 ```

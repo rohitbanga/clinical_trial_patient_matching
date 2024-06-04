@@ -1,5 +1,5 @@
 from typing import List, Optional
-from pydantic import BaseModel, BaseConfig, constr
+from pydantic import BaseModel, ConfigDict, constr
 from enum import Enum
 from collections import namedtuple
 
@@ -82,7 +82,7 @@ class MI_6MOS(BaseHFModel):
     criterion: str = "MI-6MOS"
 
 class CriterionAssessmentsForHF(BaseModel):
-    class Config(BaseConfig):
+    class Config(ConfigDict):
         arbitrary_types_allowed = True
     abdominal: ABDOMINAL
     advanced_cad: ADVANCED_CAD
