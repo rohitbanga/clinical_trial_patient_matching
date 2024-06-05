@@ -3,10 +3,12 @@
 How to install the repo:
 
 ```bash
+cd /workspace
+git clone https://github.com/rohitbanga/clinical_trial_patient_matching.git
+cd /clinical_trial_patient_matching
 conda create -n pmct python=3.10 -y
 source activate pmct
 pip install -r requirements.txt
-pip install vllm
 pip install -e .
 ```
 
@@ -17,7 +19,7 @@ python scripts/create_db.py --path_to_data ./data/train/ --embed_model 'sentence
 
 python scripts/create_db.py --path_to_data ./data/n2c2-t1_gold_standard_test_data/test/ --embed_model 'sentence-transformers/all-MiniLM-L6-v2'
 
-python scripts/eval.py --llm_model 'NousResearch/Hermes-2-Theta-Llama-3-8B' --strategy 'all_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999 --tensor_parallel_size 4
+python scripts/eval.py --llm_model 'NousResearch/Hermes-2-Theta-Llama-3-8B' --strategy 'all_criteria_each_notes' --is_chunk_keep_full_note --n_chunks 9999 --tensor_parallel_size 1
 
 ```
 
